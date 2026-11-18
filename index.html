@@ -89,6 +89,7 @@ ol.guide li{margin:0 0 6px}
 <div id="toast"></div>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" class="hide">
 <input type="file" id="fileZip" accept=".zip" class="hide">
+<input type="file" id="fileGal" accept=".zip" class="hide">
 <input type="file" id="fileQt" accept=".xlsx,.xls" class="hide">
 <input type="file" id="fileJson" accept=".json" class="hide">
 
@@ -587,7 +588,30 @@ async function parseDossierZip(file) {
   }
   if (slTong) { const a = lots.reduce((s, l) => s + l.dienTich, 0) || 1; lots.forEach(l => l.slDk = Math.round(slTong * l.dienTich / a * 10) / 10); }
   const extra = pics.filter(p => !p.used && !p.field);
-  return { data: { info, farmers, lots: lots.map(({ _key, _pic, ...l }) => l) }, lotPics: lots.map(l => l._pic), extra, main: main.name, nDecl: decl.size };
+  // ---- counts declared in the documents vs what was read
+  const checks = [];
+  const declHo = parseInt(lineVal(L, /Số hộ tham gia vùng trồng[^:]*:\s*(\d+)/i) || lineVal(L, /^Số hộ\s*:\s*(\d+)/i), 10);
+  const declDt = num(String(lineVal(L, /Diện tích cây trồng[^:]*:\s*([\d.,]+)/i) || lineVal(L, /Tổng diện tích[^:]*:\s*([\d.,]+)/i)).replace(",", "."));
+  const sumDt = Math.round(lots.reduce((a, l) => a + l.dienTich, 0) * 100) / 100;
+  const hhRows = hhTab.filter(o => col(o, "Họ tên", "Tên hộ") && !/^tổng/i.test(col(o, "Họ tên", "Tên hộ")));
+  const declLo = hhRows.reduce((a, o) => a + (parseInt(col(o, "Số điểm sản xuất", "vườn"), 10) || 0), 0);
+  const nDeclDocs = docs.filter(x => x !== main && /to khai|xac nhan tham gia/.test(norm(x.name))).length;
+  const ck = (ok, t) => checks.push([ok ? "ok" : "err", t]);
+  if (declHo) ck(declHo === farmers.length, `Số hộ: hồ sơ ghi ${declHo} hộ, công cụ đọc được ${farmers.length} hộ.`);
+  if (hhRows.length) ck(hhRows.length === farmers.length, `Bảng số cây, giống: ${hhRows.length} hộ; bảng thửa đất (GPS): ${farmers.length} hộ.`);
+  if (nDeclDocs) ck(nDeclDocs === farmers.length, `Tờ khai tham gia: ${nDeclDocs} file; đọc được thông tin CCCD từ ${decl.size} tờ khai; số hộ ${farmers.length}.`);
+  if (declLo) ck(declLo === lots.length, `Số lô (điểm sản xuất): bảng hộ ghi tổng ${declLo} lô, bảng thửa đất có ${lots.length} lô.`);
+  if (declDt) ck(Math.abs(declDt - sumDt) < 0.015, `Diện tích: hồ sơ ghi ${String(declDt).replace(".", ",")} ha, tổng diện tích các lô ${String(sumDt).replace(".", ",")} ha.`);
+  for (const [key, f] of fBy) { const o = hh.get(f.cccd) || hh.get(norm(f.ten)); if (!o) { checks.push(["err", `Hộ ${f.ten} không có trong bảng số cây, giống (số cây để trống).`]); continue; }
+    const a = num(String(col(o, "Diện tích")).replace(",", ".")), b = Math.round(lots.filter(l => l._key === key).reduce((s, l) => s + l.dienTich, 0) * 100) / 100;
+    if (a && Math.abs(a - b) >= 0.015) checks.push(["err", `Hộ ${f.ten}: bảng hộ ghi ${String(a).replace(".", ",")} ha, các lô cộng lại ${String(b).replace(".", ",")} ha.`]);
+    const nl = parseInt(col(o, "Số điểm sản xuất", "vườn"), 10), ml = lots.filter(l => l._key === key).length;
+    if (nl && nl !== ml) checks.push(["err", `Hộ ${f.ten}: bảng hộ ghi ${nl} lô, bảng thửa đất có ${ml} lô.`]); }
+  // names that differ only by diacritics are different people when CCCD differs
+  const byNorm = {}; for (const f of farmers) (byNorm[norm(f.ten)] = byNorm[norm(f.ten)] || []).push(f);
+  for (const a of Object.values(byNorm)) if (a.length > 1) checks.push(["warn", `Tên gần trùng, khác CCCD: ${a.map(f => `${f.ten} (${f.cccd || "?"})`).join(" và ")}. Công cụ tách riêng theo CCCD và số điện thoại; kiểm tra lại cho đúng người.`]);
+  const dupLot = lots.map(l => l.ma).filter((m, i, a) => a.indexOf(m) !== i); if (dupLot.length) checks.push(["warn", `Mã lô bị trùng: ${[...new Set(dupLot)].join(", ")}.`]);
+  return { data: { info, farmers, lots: lots.map(({ _key, _pic, ...l }) => l) }, lotPics: lots.map(l => l._pic), extra, main: main.name, nDecl: decl.size, checks };
 }
 async function importDossierZip(file) {
   toast("Đang đọc bộ hồ sơ…");
@@ -604,11 +628,99 @@ async function importDossierZip(file) {
   const miss = r.lots.filter(l => !photosOf(r, lotKey(l)).length).length;
   toast(`Đã nhập ${r.info.ten}: ${r.farmers.length} hộ, ${r.lots.length} lô, ${n} ảnh địa chính${miss ? ` (${miss} lô chưa có ảnh)` : ""}${res.extra.length ? `; ${res.extra.length} ảnh không nhận ra lô` : ""}. Lấy thông tin từ: ${res.main}${res.nDecl ? ` và ${res.nDecl} tờ khai hộ` : ""}.`);
   render();
+  const rows = [...res.checks];
+  rows.push([miss ? "warn" : "ok", miss ? `${miss}/${r.lots.length} lô chưa có ảnh vệ tinh. Nếu ảnh nằm trong file thư viện ảnh riêng, bấm “Nhập thư viện ảnh (.zip)”.` : `Đủ ảnh vệ tinh cho ${r.lots.length} lô.`]);
+  const nErr = rows.filter(x => x[0] === "err").length;
+  rows.unshift([nErr ? "err" : "ok", nErr ? `Có ${nErr} chỗ không khớp giữa các bảng trong hồ sơ. Sửa trong file gốc hoặc ở tab 1 trước khi xuất.` : `Khớp: ${r.farmers.length} hộ, ${r.lots.length} lô, ${String(Math.round(r.lots.reduce((a, l) => a + num(l.dienTich), 0) * 100) / 100).replace(".", ",")} ha.`]);
+  await checkBox(`Kiểm tra số hộ, số lô: ${r.info.ten}`, rows);
 }
 $("#fileZip").addEventListener("change", async ev => {
   const f = ev.target.files[0]; ev.target.value = ""; if (!f) return;
   try { await importDossierZip(f); } catch (e) { console.error(e); alertBox("Không đọc được bộ hồ sơ: " + e.message); }
 });
+/* ============================================================ photo library zip (FarmBase "Thư viện ảnh") */
+// 1. Ảnh vùng trồng/<nhóm (n)>/*  -> Phụ lục 1;  3. Ảnh lô đất/<Họ tên> - <mã lô>/Ảnh địa chính.jpg -> Phụ lục 2
+// 2. Ảnh nông hộ (CCCD), giấy phép, người đại diện, Ảnh hồ sơ, Khác: không đưa vào phiếu
+const GAL_GROUP = [[/^(flycam|drone|anh flycam|vung trong|toan canh|anh vuon)$/, "drone"], [/^(kho|kho thuoc|kho phan|kho vat tu|phan bon|thuoc bvtv|vat tu khac)/, "kho"],
+  [/thu hoach/, "thu"], [/^(bay|bay con trung|giam sat|nhat ky)/, "gs"], [/^(dao tao|tap huan)/, "dt"], [/^(ve tinh|anh ve tinh|ban do)/, "sat"]];
+const galGroup = folder => { const n = norm(folder.replace(/\s*\(\d+\)\s*$/, "")); const m = GAL_GROUP.find(([re]) => re.test(n)); return m ? m[1] : ""; };
+const lotCanon = s => String(s || "").toLowerCase().normalize("NFC").replace(/\s+/g, "");
+const nameEq = (a, b) => String(a || "").toLowerCase().normalize("NFC").replace(/\s+/g, " ").trim() === String(b || "").toLowerCase().normalize("NFC").replace(/\s+/g, " ").trim();
+function galLot(r, who, code) {
+  const c = lotCanon(code);
+  const byCode = r.lots.filter(l => lotCanon(l.ma) === c);
+  return byCode.find(l => nameEq(l.chu, who)) || (byCode.length === 1 && norm(byCode[0].chu) === norm(who) ? byCode[0] : null)
+    || r.lots.find(l => nameEq(l.chu, who) && c && lotCanon(l.ma).startsWith(c));
+}
+async function importGalleryZip(file, r) {
+  toast("Đang đọc thư viện ảnh…");
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const ents = Object.values(zip.files).filter(e => !e.dir && !/(^|\/)(__MACOSX|\.)/.test(e.name) && /\.(jpe?g|png|webp)$/i.test(e.name)).map(e => ({ e, path: decZipName(e.name).split("/") }));
+  if (!ents.length) throw new Error("File zip không có ảnh.");
+  const root = p => norm(p[0]).replace(/^\d+\.\s*/, "");
+  const grp = {}, lotPic = new Map(), skipped = {}, lotFolders = new Set(), hhFolders = new Set(), noLot = new Set();
+  const skip = k => { skipped[k] = (skipped[k] || 0) + 1; };
+  for (const x of ents) {
+    const p = x.path, top = root(p), name = p[p.length - 1];
+    if (/^anh nong ho/.test(top)) { if (p.length > 2) hhFolders.add(p[1]); skip("Ảnh nông hộ (CCCD)"); continue; }
+    if (/^anh lo dat|^anh thong tin vuon/.test(top) && p.length >= 3) {
+      const folder = p[1]; lotFolders.add(folder);
+      const m = folder.match(/^(.+?)\s+-\s+(.+)$/); const l = m ? galLot(r, m[1].trim(), m[2].trim()) : null;
+      if (p.length === 3) { // ảnh nằm ngay trong thư mục lô = ảnh địa chính (vệ tinh)
+        if (!/^(anh )?(dia chinh|ve tinh)/.test(norm(name.replace(/\.[^.]+$/, "")))) { skip("Ảnh khác trong thư mục lô"); continue; }
+        if (!l) { noLot.add(folder); continue; }
+        if (!lotPic.has(l)) lotPic.set(l, x); continue;
+      }
+      const g = galGroup(p[2]); if (g === "kho") (grp.kho = grp.kho || []).push(x); else skip(p[2].replace(/\s*\(\d+\)\s*$/, ""));
+      continue;
+    }
+    if (/^anh vung trong/.test(top) && p.length >= 3) { const g = galGroup(p[1]); if (g) (grp[g] = grp[g] || []).push(x); else skip(p[1].replace(/\s*\(\d+\)\s*$/, "")); continue; }
+    skip("Ảnh không rõ nhóm");
+  }
+  // counts against the region
+  const rows = [];
+  const nHo = new Set(r.lots.map(l => l.cccd || norm(l.chu))).size, nFarm = r.farmers.length;
+  if (hhFolders.size) rows.push([hhFolders.size === nFarm ? "ok" : "warn", `Số hộ: thư viện ảnh có ${hhFolders.size} thư mục nông hộ, vùng trồng trong công cụ có ${nFarm} hộ.`]);
+  if (lotFolders.size) rows.push([lotFolders.size === r.lots.length ? "ok" : "warn", `Số lô: thư viện ảnh có ${lotFolders.size} thư mục lô, vùng trồng trong công cụ có ${r.lots.length} lô.`]);
+  if (noLot.size) rows.push(["err", `${noLot.size} thư mục lô không khớp lô nào (tên chủ hộ + mã lô): ${[...noLot].slice(0, 6).join("; ")}${noLot.size > 6 ? "…" : ""}`]);
+  const lotsNoPic = r.lots.filter(l => !lotPic.has(l) && !photosOf(r, lotKey(l)).length);
+  if (lotsNoPic.length) rows.push(["warn", `${lotsNoPic.length} lô chưa có ảnh vệ tinh: ${lotsNoPic.slice(0, 6).map(l => l.ma + " – " + l.chu).join("; ")}${lotsNoPic.length > 6 ? "…" : ""}`]);
+  const lab = Object.fromEntries(Q_PH.map(q => [q[0], q[2]]));
+  const g1 = Object.entries(grp).map(([g, a]) => `${lab[g]}: ${a.length} ảnh`);
+  rows.push(["info", `Phụ lục 1: ${g1.length ? g1.join("; ") : "không có ảnh phù hợp"}. Phụ lục 2: ${lotPic.size} ảnh vệ tinh lô.`]);
+  const sk = Object.entries(skipped).map(([k, n]) => `${k} (${n})`); if (sk.length) rows.push(["info", `Không đưa vào phiếu: ${sk.join(", ")}.`]);
+  if (!await checkBox(`Thư viện ảnh “${file.name}” → ${r.info.ten}`, rows, "Thêm ảnh vào phiếu")) return;
+  let n1 = 0, n2 = 0;
+  const add = async (g, x, cap) => {
+    const src = x.path.join("/"); if (photosOf(r, g).some(p => p.src === src)) return false;
+    const blob = await x.e.async("blob"); const nm = x.path[x.path.length - 1];
+    await addPhotos(r, g, [new File([blob], nm, { type: /png$/i.test(nm) ? "image/png" : "image/jpeg" })], true);
+    const ph = photosOf(r, g); const last = ph[ph.length - 1]; if (last) { last.src = src; if (cap != null) last.cap = cap; } return true;
+  };
+  for (const [g, a] of Object.entries(grp)) for (const x of a) if (await add(g, x, "")) n1++;
+  for (const [l, x] of lotPic) { const k = lotKey(l); if (photosOf(r, k).length) continue; if (await add(k, x, `Ảnh địa chính lô ${l.ma} – ${l.chu}`)) n2++; }
+  persist("regions", r.id);
+  toast(`Đã thêm ${n1} ảnh vào Phụ lục 1 và ${n2} ảnh vệ tinh vào Phụ lục 2.`);
+  render();
+}
+function checkBox(title, rows, okLabel) {
+  return new Promise(res => {
+    const close = v => { bg.remove(); res(v); };
+    const bg = h("div", { style: "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px" },
+      h("div", { class: "card", style: "max-width:680px;width:100%;margin:0;max-height:90vh;overflow:auto" }, h("h3", { style: "margin-top:0" }, title),
+        rows.map(([c, t]) => h("div", { class: "msg " + c }, t)),
+        h("div", { class: "row", style: "justify-content:flex-end;margin-top:10px" }, okLabel ? h("button", { class: "btn", onclick: () => close(false) }, "Hủy") : null,
+          h("button", { class: "btn pri", onclick: () => close(true) }, okLabel || "Đã hiểu"))));
+    document.body.append(bg);
+  });
+}
+$("#fileGal").addEventListener("change", async ev => {
+  const f = ev.target.files[0]; ev.target.value = ""; if (!f) return;
+  const r = S.regions[GAL_RID || UI.rid]; if (!r) { toast("Chọn hoặc nhập vùng trồng trước."); return; }
+  try { await importGalleryZip(f, r); } catch (e) { console.error(e); toast("Không đọc được thư viện ảnh: " + e.message); }
+});
+let GAL_RID = null;
+const galBtn = (rid, cls = "btn") => h("button", { class: cls, onclick: () => { GAL_RID = rid; $("#fileGal").click(); } }, "Nhập thư viện ảnh (.zip)");
 function alertBox(t) { toast(t); }
 function ask(msg) {
   return new Promise(res => {
@@ -1837,7 +1949,7 @@ function renderVung() {
   const top = h("div", { class: "card" }, h("h2", {}, "Nhập dữ liệu vùng trồng"),
     h("p", { class: "muted" }, "Chọn file Excel xuất từ Agribase (3 sheet: Vùng trồng, Nông hộ, Lô đất). Nhập lại cùng vùng sẽ cập nhật hộ và lô, giữ thông tin bạn đã bổ sung."),
     h("div", { class: "row" }, h("button", { class: "btn pri", onclick: () => $("#fileXlsx").click() }, "Nhập file vùng trồng (.xlsx)"),
-      h("button", { class: "btn pri", onclick: () => $("#fileZip").click() }, "Nhập bộ hồ sơ MVT (.zip)"),
+      h("button", { class: "btn pri", onclick: () => $("#fileZip").click() }, "Nhập bộ hồ sơ MVT (.zip)"), galBtn(UI.rid),
       h("button", { class: "btn", onclick: downloadTemplate }, "Tải file mẫu nhập liệu")),
     h("p", { class: "muted", style: "font-size:12px" }, "Bộ hồ sơ .zip gồm file Word “Bộ hồ sơ MVT” (đơn đề nghị, danh sách hộ, danh sách thửa có GPS), tờ khai từng hộ và ảnh địa chính từng lô (tên file dạng “Ảnh địa chính Họ tên - DC55-203.jpg”). Công cụ lấy thông tin đơn vị, người đại diện, hộ, lô, số cây, giống và gán ảnh vào Phụ lục 2 của bảng câu hỏi."));
   el.append(top);
@@ -2486,6 +2598,7 @@ function renderXuat() {
     const drawPh = async () => {
       const assets = await getAssets();
       phBox.replaceChildren(h("h3", {}, "Phụ lục 1: Hình ảnh minh họa / 附件1：图片清单"),
+        h("div", { class: "row", style: "margin:4px 0 8px" }, galBtn(r.id, "btn sm pri"), h("span", { class: "muted", style: "font-size:12px" }, "File “Thư viện ảnh” tải từ FarmBase: ảnh Flycam, Vùng trồng, Kho thuốc, Thu hoạch, Bẫy côn trùng vào Phụ lục 1; ảnh địa chính từng lô vào Phụ lục 2. Ảnh CCCD, giấy phép, người đại diện không đưa vào.")),
         h("p", { class: "muted" }, assets || LOCAL ? (LOCAL ? "Ảnh được lưu trên trình duyệt của máy này (máy khác không thấy). " : "") + "Chọn nhiều ảnh một lần cho mỗi nhóm. Ảnh được thu nhỏ (cạnh dài 1600 px) và lưu cùng công cụ; khi tải phiếu, ảnh được chèn vào đúng nhóm theo thứ tự, 2 ảnh mỗi hàng, kèm chú thích. Gõ chú thích dưới từng ảnh."
           : "Chọn nhiều ảnh một lần cho mỗi nhóm; ảnh được chèn vào phiếu khi tải, 2 ảnh mỗi hàng. Lưu ý: ở chế độ này ảnh chỉ giữ khi trang còn mở, hãy tải phiếu trước khi đóng trang."),
         ...Q_PH.map(([g, cn, vn, , hint], i) => {
@@ -2586,7 +2699,19 @@ function renderXuat() {
   }
   el.append(h("div", { class: "card" }, h("h2", {}, "Kết quả kiểm tra sâu bệnh thực tế của lô"),
     h("p", { class: "muted" }, "Mỗi dòng là một lần kiểm tra định kỳ. Chọn mức gây hại thấy ngoài vườn (“+phun” nếu có phun thuốc, thuốc lấy theo thuốc mặc định của sinh vật gây hại hoặc thuốc hộ đã mua). Ghi đúng số ruồi đục quả đếm được ở bẫy (kể cả 0). Lô còn lần kiểm tra chưa nhập thì hồ sơ in chữ BẢN NHÁP và ô số ruồi để trống."),
-    h("div", { class: "row" }, lotSel1, h("button", { class: "btn sm", onclick: () => renderXuat() }, "Cập nhật kiểm tra")), obsBox));
+    h("div", { class: "row" }, lotSel1, h("button", { class: "btn sm", onclick: () => renderXuat() }, "Cập nhật kiểm tra"),
+      h("button", { class: "btn sm", onclick: () => quickFill(false) }, "Điền nhanh “không phát hiện” – lô này"),
+      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), obsBox));
+  async function quickFill(all) {
+    const today = todayDn();
+    const mons = plan.events.filter(e => e.kind === "mon" && !e.deleted && !e.entered && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d <= today);
+    const fut = plan.events.filter(e => e.kind === "mon" && !e.deleted && !e.entered && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d > today).length;
+    if (!mons.length) { toast(fut ? `Các lần kiểm tra còn lại đều sau hôm nay (${fut} lần), chưa điền được.` : "Không còn lần kiểm tra nào chưa nhập."); return; }
+    const nLot = new Set(mons.map(e => e.lot)).size;
+    if (!await ask(`Điền ${mons.length} lần kiểm tra chưa nhập (${nLot} lô, đến hôm nay) là: không phát hiện sâu bệnh, bẫy 0 ruồi đục quả.\n\nChỉ dùng khi các lần kiểm tra này đã thực hiện ngoài vườn và đúng là không phát hiện gì. Sau đó sửa riêng những lần có phát hiện (chọn mức gây hại, nhập số ruồi).${fut ? `\n\n${fut} lần kiểm tra sau hôm nay giữ nguyên, điền khi đã kiểm tra.` : ""}\n\nTiếp tục?`)) return;
+    const o = ed(); for (const m of mons) o[m.key] = { ...(o[m.key] || {}), obs: {}, fly: 0, quick: 1 };
+    saveEd(); toast(`Đã điền ${mons.length} lần kiểm tra “không phát hiện”.`); renderXuat();
+  }
   drawObs();
 
   // ---- review & edit
