@@ -940,6 +940,8 @@ function buildPlan(r, cfg, year, span) {
     if (ed.fly != null && ed.fly !== "") e.flyEd = Math.max(0, Math.round(num(ed.fly)));
     if (e.kind === "mon") e.entered = !!(ed.obs || e.flyEd != null);
   }
+  // region setting: checks done up to today with nothing entered count as "nothing found, 0 flies" (the user confirmed this once for the region)
+  if (r.monNo) { const t = todayDn(); for (const e of events) if (e.kind === "mon" && !e.entered && !e.deleted && e.d <= t) { e.obs = {}; e.flyEd = 0; e.entered = true; e.autoNo = true; } }
   const alive = events.filter(e => !e.deleted);
   // a detection is recorded at the periodic check on or after its date (one row, no repeats)
   const monsBy = {};
@@ -1234,7 +1236,7 @@ function buildDocs(r, cfg, plan, from, to) {
   };
   const byLot = k => ev.filter(e => e.lot === k);
   const SL = slimPlan(plan, from, to, r.maxNk);
-  const draftLots = new Set(ev.filter(e => e.kind === "mon" && !e.entered).map(e => e.lot));
+  const draftLots = new Set(ev.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).map(e => e.lot));
   ctx.draftLots = draftLots.size; ctx.draft = draftLots.size || (FORCE_DRAFT ? 1 : 0);
   lots.forEach(l => { l.draftMark = draftLots.has(l.k); });
   const files = [];
@@ -2425,11 +2427,12 @@ function renderXuat() {
   const saveEd = () => persist("edits", pk);
   const issues = [...regionIssues(r), ...planIssues(r, cfg, plan, X.from, X.to), ...realIssues(r, cfg, plan, ed())];
   const nErr = issues.filter(x => x[0] === "err").length;
-  const isDraft = inR.some(e => e.kind === "mon" && !e.entered);
+  const isDraft = inR.some(e => e.kind === "mon" && !e.entered && e.d <= todayDn());
+  const nFuture = inR.filter(e => e.d > todayDn()).length;
   // official files only when every required (red) item is complete
   const qErrs = X.withQ !== false ? qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").filter(x => x[0] === "err").map(x => `Phiếu khảo sát (06): thiếu ${x[1]}`) : [];
-  const nMonLeft = inR.filter(e => e.kind === "mon" && !e.entered).length;
-  const blockers = [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrs];
+  const nMonLeft = inR.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).length;
+  const blockers = [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrs, ...(nFuture ? [`Khoảng ngày đang chọn kéo đến ${fmt(X.to)}, có ${nFuture} việc sau hôm nay. Hồ sơ chính thức chỉ ghi việc đã làm: chọn “Đến ngày” là hôm nay hoặc sớm hơn (nút “Đầu vụ → hôm nay”).`] : [])];
   const btnZip = h("button", { class: blockers.length ? "btn" : "btn sm", onclick: () => doExport(null) }, blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)");
   const btnOff = h("button", { class: "btn pri", disabled: blockers.length > 0, title: blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "", onclick: () => { if (!blockers.length) doExport(null, true); } }, "Tải tệp chính thức (.zip)");
   const one = (i, t) => h("button", { class: "btn sm", onclick: () => doExport(i) }, t);
@@ -2693,7 +2696,7 @@ function renderXuat() {
       fl.addEventListener("change", () => upd(x => { if (fl.value === "") delete x.fly; else x.fly = Math.max(0, Math.round(num(fl.value))); }));
       const ok = h("button", { class: "btn sm", title: "Đã kiểm tra ngoài vườn: không thấy sâu bệnh, bẫy 0 ruồi", onclick: () => upd(x => { x.obs = x.obs || {}; x.fly = x.fly ?? 0; }) }, "Không phát hiện");
       const rs = h("button", { class: "btn sm", title: "Xóa kết quả đã nhập của lần này", onclick: () => upd(x => { delete x.obs; delete x.fly; }) }, "↺");
-      return h("tr", {}, h("td", {}, fmt(m.d), h("div", { class: "muted" }, m.entered ? "đã nhập" : "mẫu – chưa nhập")), h("td", {}, m.stage.vn), ...cells, h("td", {}, fl), h("td", {}, m.entered ? null : ok, rs));
+      return h("tr", {}, h("td", {}, fmt(m.d), h("div", { class: "muted" }, m.autoNo ? "mặc định: không phát hiện" : m.entered ? "đã nhập" : m.d > todayDn() ? "chưa đến ngày" : "mẫu – chưa nhập")), h("td", {}, m.stage.vn), ...cells, h("td", {}, fl), h("td", {}, m.entered ? null : ok, rs));
     }));
     obsBox.replaceChildren(h("div", { class: "tw", style: "margin-top:8px;max-height:520px;overflow:auto" }, h("table", { class: "t" },
       h("thead", {}, h("tr", {}, h("th", {}, "Ngày kiểm tra"), h("th", {}, "Giai đoạn"), PE.map(p => h("th", { title: p.vn }, p.vn.replace(/\s*\(.*\)$/, ""))), h("th", {}, "Ruồi đục quả (bẫy)"), h("th", {}, ""))), tb)),
@@ -2703,7 +2706,19 @@ function renderXuat() {
     h("p", { class: "muted" }, "Mỗi dòng là một lần kiểm tra định kỳ. Chọn mức gây hại thấy ngoài vườn (“+phun” nếu có phun thuốc, thuốc lấy theo thuốc mặc định của sinh vật gây hại hoặc thuốc hộ đã mua). Ghi đúng số ruồi đục quả đếm được ở bẫy (kể cả 0). Lô còn lần kiểm tra chưa nhập thì hồ sơ in chữ BẢN NHÁP và ô số ruồi để trống."),
     h("div", { class: "row" }, lotSel1, h("button", { class: "btn sm", onclick: () => renderXuat() }, "Cập nhật kiểm tra"),
       h("button", { class: "btn sm", onclick: () => quickFill(false) }, "Điền nhanh “không phát hiện” – lô này"),
-      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), obsBox));
+      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), monNoBox(), obsBox));
+  function monNoBox() {
+    const ck = h("input", { type: "checkbox", checked: !!r.monNo });
+    ck.addEventListener("change", async () => {
+      if (ck.checked) {
+        if (!await ask(`Bật cho cả vùng “${r.info.ten}”: mọi lần kiểm tra định kỳ đến hôm nay mà không nhập gì sẽ được ghi là không phát hiện sâu bệnh, bẫy 0 ruồi. Các ngày tiếp theo cũng tự tính như vậy khi đến ngày.\n\nChỉ bật khi cán bộ, nông hộ thực sự kiểm tra vườn theo lịch và không phát hiện gì. Lần nào có phát hiện thì vẫn nhập riêng ở bảng dưới (kết quả nhập tay luôn được ưu tiên).\n\nBật?`)) { ck.checked = false; return; }
+        r.monNo = dmy(todayDn());
+      } else r.monNo = "";
+      persist("regions", r.id); renderXuat();
+    });
+    return h("label", { class: "row", style: "gap:6px;margin:8px 0;padding:8px 10px;border:1px solid var(--line, #dde3dc);border-radius:8px" }, ck,
+      h("span", {}, h("b", {}, "Mặc định “không phát hiện” cho cả vùng"), r.monNo ? ` (bật từ ${r.monNo})` : "", h("span", { class: "muted" }, " – không cần xác nhận từng vườn; các lần kiểm tra đến hôm nay chưa nhập được ghi là không phát hiện, 0 ruồi. Lần có phát hiện thì nhập ở bảng dưới.")));
+  }
   async function quickFill(all) {
     const today = todayDn();
     const mons = plan.events.filter(e => e.kind === "mon" && !e.deleted && !e.entered && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d <= today);
