@@ -133,6 +133,17 @@ function fromIso(s) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ""); retur
 function fromDMY(s) { const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(s || "").trim()); return m ? dn(+m[3], +m[2], +m[1]) : null; }
 function yearOf(n) { return new Date(n * DAY).getUTCFullYear(); }
 const monthOf = n => new Date(n * DAY).getUTCMonth() + 1;
+// purpose of a scheduled (preventive) spray: name the pests it prevents in that month, without claiming any was found
+const INSECT_RE = /^(rệp|rầy|sâu|mọt|nhện|bọ|ruồi|côn trùng)/i;
+function preventPurpose(cfg, P, p, t, d) {
+  if (!isPesticide(p) || !["sau", "benh"].includes(p.loai)) return [t.vn, t.cn];
+  const m = monthOf(d), insect = p.loai === "sau";
+  const cand = cfg.pests.filter(v => !v.trap && inMonths(v.thang, m) && INSECT_RE.test(v.vn) === insect);
+  const tg = [...cand.filter(v => v.prod && (v.prod === p.id || v.prod === t.prod)), ...cand.filter(v => !(v.prod && (v.prod === p.id || v.prod === t.prod)))].slice(0, 3);
+  if (!tg.length) return [t.vn, t.cn];
+  const short = s => String(s).replace(/\s*[（(].*[)）]\s*$/, "");
+  return [`${t.vn} – phòng ngừa ${tg.map(v => short(v.vn)).join(", ")} theo quy trình`, `${t.cn} – 按规程预防${tg.map(v => short(v.cn)).join("、")}`];
+}
 function inMonths(spec, m) {
   const t = String(spec || "").trim(); if (!t) return true;
   return t.split(/[,;]+/).some(part => { const x = part.split("-").map(v => parseInt(v, 10)); if (x.length === 1) return x[0] === m; const [a, b] = x; return a <= b ? m >= a && m <= b : (m >= a || m <= b); });
@@ -624,7 +635,7 @@ async function importDossierZip(file) {
     const p = res.lotPics[i]; if (!p) continue; const l = r.lots[i];
     const blob = await p.e.async("blob"); const f = new File([blob], p.name, { type: /png$/i.test(p.name) ? "image/png" : "image/jpeg" });
     const k = lotKey(l); if (photosOf(r, k).length) continue;
-    await addPhotos(r, k, [f], true); const ph = photosOf(r, k); if (ph.length) { ph[ph.length - 1].cap = `Ảnh địa chính lô ${l.ma} – ${l.chu}`; n++; }
+    await addPhotos(r, k, [f], true); const ph = photosOf(r, k); if (ph.length) { ph[ph.length - 1].cap = `Ảnh địa chính – ${l.chu}`; n++; }
   }
   persist("regions", id);
   const miss = r.lots.filter(l => !photosOf(r, lotKey(l)).length).length;
@@ -700,7 +711,7 @@ async function importGalleryZip(file, r) {
     const ph = photosOf(r, g); const last = ph[ph.length - 1]; if (last) { last.src = src; if (cap != null) last.cap = cap; } return true;
   };
   for (const [g, a] of Object.entries(grp)) for (const x of a) if (await add(g, x, "")) n1++;
-  for (const [l, x] of lotPic) { const k = lotKey(l); if (photosOf(r, k).length) continue; if (await add(k, x, `Ảnh địa chính lô ${l.ma} – ${l.chu}`)) n2++; }
+  for (const [l, x] of lotPic) { const k = lotKey(l); if (photosOf(r, k).length) continue; if (await add(k, x, `Ảnh địa chính – ${l.chu}`)) n2++; }
   persist("regions", r.id);
   toast(`Đã thêm ${n1} ảnh vào Phụ lục 1 và ${n2} ảnh vệ tinh vào Phụ lục 2.`);
   render();
@@ -950,6 +961,8 @@ function buildPlan(r, cfg, year, span) {
     if (ed.fly != null && ed.fly !== "") e.flyEd = Math.max(0, Math.round(num(ed.fly)));
     if (e.kind === "mon") e.entered = !!(ed.obs || e.flyEd != null);
   }
+  // region setting: checks done up to today with nothing entered count as "nothing found, 0 flies" (the user confirmed this once for the region)
+  if (r.monNo) { const t = todayDn(); for (const e of events) if (e.kind === "mon" && !e.entered && !e.deleted && e.d <= t) { e.obs = {}; e.flyEd = 0; e.entered = true; e.autoNo = true; } }
   const alive = events.filter(e => !e.deleted);
   // a detection is recorded at the periodic check on or after its date (one row, no repeats)
   const monsBy = {};
@@ -974,7 +987,7 @@ function buildPlan(r, cfg, year, span) {
     if (e.kind === "task") {
       const t = e.task, p = prodFor(r, e.L, P, t.prod);
       e.vn = t.vn; e.cn = t.cn;
-      if (p) e.prods.push({ p, ...useOf(cfg, p, e.L, t.dose), purpose: [t.vn, t.cn] });
+      if (p) e.prods.push({ p, ...useOf(cfg, p, e.L, t.dose), purpose: preventPurpose(cfg, P, p, t, e.d) });
       e.nk = t.kind === "thu" ? "thu" : p ? (isPesticide(p) || p.loai === "phanla" ? "phun" : "bon") : t.kind || "cham";
     } else if (e.kind === "mon" || (e.kind === "pest" && !e.into)) {
       const occs = e.kind === "mon" ? e.occs : [e];
@@ -1041,8 +1054,8 @@ function planIssues(r, cfg, plan, from, to) {
   cfg.tasks.forEach(t => { if (!plan.stages.find(s => s.id === t.stage)) out.push(["err", `Công việc “${t.vn}” chưa chọn giai đoạn.`]); });
   const usedP = new Map(); for (const e of plan.active) for (const { p } of e.prods) usedP.set(p.id, p);
   [...usedP.values()].filter(isPesticide).forEach(p => {
-    if (p.phi === "" || p.phi == null) out.push(["err", `${p.ten}: chưa có thời gian cách ly (ngày) theo nhãn.`]);
-    if (!p.hoatChat) out.push(["err", `${p.ten}: chưa có hoạt chất.`]);
+    if (p.phi === "" || p.phi == null) out.push(["warn", `${p.ten}: chưa có thời gian cách ly (ngày) theo nhãn, hồ sơ ghi “theo nhãn”. Nên bổ sung ở tab 2.`]);
+    if (!p.hoatChat) out.push(["warn", `${p.ten}: chưa có hoạt chất. Nên bổ sung ở tab 2.`]);
   });
   const notChecked = [...usedP.values()].filter(p => isPesticide(p) && !p.dk).map(p => p.ten);
   if (notChecked.length) out.push(["warn", `Chưa đánh dấu đã đối chiếu Danh mục thuốc BVTV được phép và nhãn (đăng ký trên sầu riêng, liều, cách ly, MRL Trung Quốc): ${notChecked.join(", ")}.`]);
@@ -1092,7 +1105,7 @@ function planIssues(r, cfg, plan, from, to) {
 
 /* ============================================================ docx writer */
 const D = window.docx;
-const TNR = { ascii: "Times New Roman", hAnsi: "Times New Roman", eastAsia: "Times New Roman", cs: "Times New Roman" };
+const TNR = { ascii: "Times New Roman", hAnsi: "Times New Roman", eastAsia: "SimSun", cs: "Times New Roman" };
 const GREEN = "1E5E20";
 const cmT = x => Math.round(x * 567);
 function runs(parts, o = {}) {
@@ -1238,13 +1251,13 @@ function buildDocs(r, cfg, plan, from, to) {
   const crop = `${r.info.cayTrong || "Sầu riêng"} ${r.info.giong || ""} / ${CROP_CN[norm(r.info.cayTrong || "Sầu riêng")] || ""} ${r.info.giong || ""}`.replace(/\s+/g, " ").trim();
   const ctx = {
     org: r.info.donVi || r.info.ten || "Vùng trồng", vung: r.info.ten || "", header: r.info.ten || "", year: plan.year, from: Math.max(from, plan.sStart), to: Math.min(to, plan.sEnd),
-    addr: [r.info.diaChi, r.info.xa, r.info.tinh].filter(Boolean).join(", "), ma: r.info.ma || "………………… (đang đăng ký / 申请中)",
+    addr: joinAddr(r.info.diaChi, r.info.xa, r.info.tinh), ma: r.info.ma || "………………… (đang đăng ký / 申请中)",
     area: String(area).replace(".", ","), nHo, nLo: lots.length, crop, rep: r.info.daiDien || "…………………", std: r.info.tieuChuan,
     tinhShort: (r.info.tinh || "").replace(/^Tỉnh\s+|^Thành phố\s+/i, "") || "………",
   };
   const byLot = k => ev.filter(e => e.lot === k);
   const SL = slimPlan(plan, from, to, r.maxNk);
-  const draftLots = new Set(ev.filter(e => e.kind === "mon" && !e.entered).map(e => e.lot));
+  const draftLots = new Set(ev.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).map(e => e.lot));
   ctx.draftLots = draftLots.size; ctx.draft = draftLots.size || (FORCE_DRAFT ? 1 : 0);
   lots.forEach(l => { l.draftMark = draftLots.has(l.k); });
   const files = [];
@@ -1490,9 +1503,9 @@ const Q_DEFAULT = {
   kiemTraTruocThu: ["Trước thu hoạch 1–2 tháng, cơ quan kiểm dịch thực vật kiểm tra thực địa về tình hình sinh vật gây hại, việc ghi chép nhật ký canh tác, sử dụng thuốc BVTV và vệ sinh đồng ruộng; hướng dẫn nông hộ tuân thủ thời gian cách ly trước thu hoạch.",
     "采收前1–2个月，植物检疫部门实地检查有害生物情况、农事记录、农药使用及田间卫生，并指导农户遵守采前安全间隔期。",
     "1–2 months before harvest, plant quarantine officials inspect pest status, farming records, pesticide use and field sanitation, and advise farmers to observe pre-harvest intervals."],
-  bienPhapTQ: ["Áp dụng quản lý dịch hại tổng hợp (IPM); treo bẫy pheromone giám sát ruồi đục quả; kiểm tra định kỳ rệp sáp bằng điều tra 5 điểm; xử lý kiến cộng sinh; phun thuốc theo nguyên tắc 4 đúng và đảm bảo thời gian cách ly; không thu hoạch trái nhiễm sinh vật gây hại.",
-    "实施有害生物综合治理（IPM）；悬挂性诱捕器监测果实蝇；采用五点取样定期检查粉蚧；防治共生蚂蚁；按“四正确”原则施药并遵守安全间隔期；受害果实不予采收。",
-    "Implement IPM; deploy pheromone traps for fruit fly monitoring; inspect mealybugs regularly by 5-point sampling; control symbiotic ants; spray under the \"4 Right Principles\" and observe pre-harvest intervals; infested fruit is not harvested."],
+  bienPhapTQ: ["Giám sát sinh vật gây hại theo ISPM 6; treo bẫy pheromone giám sát ruồi đục quả; kiểm tra định kỳ rệp sáp bằng điều tra 5 điểm; xử lý kiến cộng sinh; phun thuốc theo nguyên tắc 4 đúng và đảm bảo thời gian cách ly; không thu hoạch trái nhiễm sinh vật gây hại.",
+    "按ISPM 6开展有害生物监测；悬挂性诱捕器监测果实蝇；采用五点取样定期检查粉蚧；防治共生蚂蚁；按“四正确”原则施药并遵守安全间隔期；受害果实不予采收。",
+    "Conduct pest surveillance under ISPM 6; deploy pheromone traps for fruit fly monitoring; inspect mealybugs regularly by 5-point sampling; control symbiotic ants; spray under the \"4 Right Principles\" and observe pre-harvest intervals; infested fruit is not harvested."],
   khacPhuc: ["Tạm dừng thu hoạch, xuất khẩu tại khu vực bị nhiễm; báo cáo cơ quan kiểm dịch thực vật, khoanh vùng và áp dụng ngay biện pháp xử lý; điều tra nguyên nhân, khắc phục triệt để và chỉ khôi phục sau khi cơ quan kiểm dịch kiểm tra lại đạt yêu cầu.",
     "立即暂停受影响区域的采收和出口；报告植物检疫部门，划定区域并立即采取处理措施；调查原因，彻底整改，经检疫部门复查合格后方可恢复。",
     "Immediately suspend harvest and export in affected areas; report to plant quarantine authorities, delimit the area and apply treatments; investigate root causes, take corrective actions, and resume only after re-inspection and approval."],
@@ -1557,7 +1570,7 @@ function qAuto(r, cfg, plan, from, to) {
   const dd = [r.info.daiDien, r.info.sdtDaiDien].filter(Boolean).join(" – ");
   A.daiDien = dd ? [`${r.info.daiDien || ""}${r.info.sdtDaiDien ? ` – ĐT: ${r.info.sdtDaiDien}` : ""}`, `${r.info.daiDien || ""}${r.info.sdtDaiDien ? ` – 电话：${r.info.sdtDaiDien}` : ""}`, `${r.info.daiDien || ""}${r.info.sdtDaiDien ? ` – Tel: ${r.info.sdtDaiDien}` : ""}`] : ["", "", ""];
   A.tongDT = `${vnNum(area)} ha (${nHo} hộ / ${lots.length} lô)`;
-  A.diaChi = same([r.info.diaChi, r.info.xa, r.info.tinh].filter(Boolean).join(", "));
+  A.diaChi = same(joinAddr(r.info.diaChi, r.info.xa, r.info.tinh));
   A.tinh = [r.info.tinh || "", /đắk lắk|dak lak/i.test(norm(r.info.tinh || "")) || /dak lak/.test(norm(r.info.tinh || "")) ? "多乐省" : r.info.tinh || "", (r.info.tinh || "").replace(/^Tỉnh\s+/i, "") + (r.info.tinh ? " Province" : "")];
   A.toaDo = lotCentroid(lots);
   const gm = new Map(); for (const g of [...lots.map(l => l.giong), r.info.giong].flatMap(x => String(x || "").split(/[,;\/]+/))) { const t = String(g || "").trim(); if (t && !gm.has(norm(t))) gm.set(norm(t), t.charAt(0).toUpperCase() + t.slice(1)); }
@@ -1607,9 +1620,9 @@ function qAuto(r, cfg, plan, from, to) {
       `Data aggregated from farm pesticide logs from ${fmt(a)} to ${fmt(b)}; all applications followed label dosages and pre-harvest intervals.`];
   }
   A.kyThuat = cfg.canBo ? [`Cán bộ kỹ thuật: ${cfg.canBo}`, `技术人员：${cfg.canBo}`, `Technician: ${cfg.canBo}`] : ["", "", ""];
-  A.sanXuat = [`${nHo} hộ, ${lots.length} lô, ${vnNum(area)} ha, ${trees} cây sầu riêng${gs.length ? ` (giống ${gs.join(", ")})` : ""}; áp dụng quy trình ${r.info.tieuChuan || "VietGAP"} và IPM.`,
-    `${nHo}户，${lots.length}个地块，${vnNum(area)}公顷，榴莲${trees}株${gs.length ? `（品种${gs.join("、")}）` : ""}；实施${r.info.tieuChuan || "VietGAP"}及IPM。`,
-    `${nHo} households, ${lots.length} lots, ${String(area)} ha, ${trees} durian trees${gs.length ? ` (${gs.join(", ")})` : ""}; applying ${r.info.tieuChuan || "VietGAP"} and IPM.`];
+  A.sanXuat = [`${nHo} hộ, ${lots.length} lô, ${vnNum(area)} ha, ${trees} cây sầu riêng${gs.length ? ` (giống ${gs.join(", ")})` : ""}; áp dụng quy trình ${r.info.tieuChuan || "VietGAP"} và giám sát sinh vật gây hại theo ISPM 6.`,
+    `${nHo}户，${lots.length}个地块，${vnNum(area)}公顷，榴莲${trees}株${gs.length ? `（品种${gs.join("、")}）` : ""}；实施${r.info.tieuChuan || "VietGAP"}并按ISPM 6开展有害生物监测。`,
+    `${nHo} households, ${lots.length} lots, ${String(area)} ha, ${trees} durian trees${gs.length ? ` (${gs.join(", ")})` : ""}; applying ${r.info.tieuChuan || "VietGAP"} with pest surveillance under ISPM 6.`];
   const sl = lots.reduce((a, l) => a + num(l.slDk), 0), st = lots.reduce((a, l) => a + num(l.slTt), 0);
   const out = st || sl;
   A.sanLuong = out ? [`Sản lượng ${st ? "thực tế" : "dự kiến"} khoảng ${vnNum(out)} tấn/năm; thị trường xuất khẩu: Trung Quốc.`, `${st ? "实际" : "预计"}年产量约${vnNum(out)}吨；出口市场：中国。`, `${st ? "Actual" : "Estimated"} output about ${out} tons/year; export market: China.`] : ["", "", ""];
@@ -1624,6 +1637,12 @@ function qAuto(r, cfg, plan, from, to) {
   return A;
 }
 // value for one field: [Vietnamese, second language] (second = "en" or "cn")
+// join address parts without repeating a commune/province that is already written (VD "Phường Buôn Hồ, Tỉnh Đắk Lắk" + xa + tinh)
+function joinAddr(...ps) {
+  const k = t => hoKey(t).replace(/^(xã|phường|thị trấn|tỉnh|thành phố|tp\.?)\s+/, ""), seen = new Set(), out = [];
+  for (const p of ps) for (const seg of String(p ?? "").split(",").map(x => x.trim()).filter(Boolean)) { const kk = k(seg); if (!seen.has(kk)) { seen.add(kk); out.push(seg); } }
+  return out.join(", ");
+}
 function qGet(r, A, k, l2 = "cn") {
   const f = QF.find(x => x[0] === k), u = (r.q || {})[k];
   if (f[5] === "b") {
@@ -1768,7 +1787,7 @@ function buildQ(r, cfg, plan, from, to) {
   // labels: Chinese / Vietnamese (English added only for the Vietnamese + English version)
   const labelParas = k => { const f = f_(k); return [new D.Paragraph({ spacing: { after: 0 }, children: [run(f[3] + " / ", { c: LB }), ...(EN ? [run(f[4] + " / ", { c: LB })] : []), run(f[2], { b: true })] })]; };
   const valParas = k => {
-    const [vn, sec] = V(k); const red = Q_RED.includes(k) ? "C00000" : undefined;
+    const [vn, sec] = V(k); const red = undefined;
     if (!vn && !sec) return [new D.Paragraph({ spacing: { after: 0 }, children: [run("……………………", { c: "C00000" })] })];
     const out = [];
     if (vn) String(vn).split("\n").forEach(t => out.push(new D.Paragraph({ spacing: { after: 0 }, children: [run(t, { c: red })] })));
@@ -1846,7 +1865,7 @@ function buildQ(r, cfg, plan, from, to) {
         ["总面积 / Tổng diện tích", V("tongDT")[0]], ["参与农户数 / Tổng số hộ tham gia", String(new Set(plan.lots.map(l => hoKey(l.chu))).size)], ["采收与出口时间 / Thời gian thu hoạch, xuất khẩu", V("thoiGian")[0]]])
         ch.push(new D.Paragraph({ spacing: { after: 20 }, children: [run(lab + ": ", { b: true, s: 20 }), run(val || "……………", { s: 20 })] }));
       ch.push(tbl([["序号", "STT"], ["农户", "Chủ hộ"], ["面积（公顷）", "Diện tích (ha)"], ["株数", "Số cây"], ["GPS坐标", "Tọa độ GPS"]],
-        plan.lots.map((l, j) => [String(j + 1), l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 6.0, 2.4, 2.0, 6.0], 8.5, [0, 2, 3]), para("", { after: 4 }));
+        plan.lots.map((l, j) => [String(j + 1), l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 5.8, 2.6, 2.2, 5.8], 8.5, [0, 2, 3]), para("", { after: 4 }));
     } else ch.push(...desc(Q_PH_DESC[G[0]]));
     ch.push(...photoBlock(n, G[0], G[4], G[5]));
   });
@@ -1869,10 +1888,10 @@ function buildQ(r, cfg, plan, from, to) {
     const hdr = new D.TableRow({ tableHeader: true, cantSplit: true, children: [cell([para("地块信息 / Thông tin lô", { s: 9.5, b: true, al: "c", after: 0 })], IW, { fill: "DDEBDD" }), cell([para("卫星图（标出地块边界）/ Ảnh vệ tinh có ranh giới lô", { s: 9.5, b: true, al: "c", after: 0 })], PW, { fill: "DDEBDD" })] });
     const rows = plan.lots.map((l, j) => {
       const ps = photosOf(r, lotKey(l));
-      const info = [para(`${j + 1}. 地块 / Lô: ${l.ma || "–"}`, { s: 10, b: true, after: 2 }), para(`农户 / Chủ hộ: ${l.chu || "–"}`, { s: 9.5, after: 2 }), para(`面积 / Diện tích: ${vnNum(num(l.dienTich))} ha`, { s: 9.5, after: 2 }),
-        para(`株数 / Số cây: ${l.soCay || "–"}`, { s: 9.5, after: 2 }), para(`坐标 / Tọa độ: ${l.toaDo || "–"}`, { s: 9, after: 2 }), ...(l.thua || l.to ? [para(`Tờ ${l.to || "–"}, thửa ${l.thua || "–"}`, { s: 9, after: 0 })] : [])];
-      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình 2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""} / 图2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""}: ${p.cap || `Lô ${l.ma}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
-        : [para(`[Chèn ảnh vệ tinh lô ${l.ma} có ranh giới lô]`, { s: 9.5, i: true, al: "c", c: "C00000", before: 22, after: 0 }), para(`[插入地块${l.ma}卫星图]`, { s: 9, i: true, al: "c", c: "C00000", after: 22 })];
+      const info = [para(`${j + 1}. 农户 / Chủ hộ: ${l.chu || "–"}`, { s: 10, b: true, after: 2 }), para(`面积 / Diện tích: ${vnNum(num(l.dienTich))} ha`, { s: 9.5, after: 2 }),
+        para(`株数 / Số cây: ${l.soCay || "–"}`, { s: 9.5, after: 2 }), para(`坐标 / Tọa độ: ${l.toaDo || "–"}`, { s: 9, after: 2 })];
+      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình 2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""} / 图2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""}: ${String(p.cap || "").replace(/ lô .+? – /, " – ") || `Ảnh vệ tinh – ${l.chu}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
+        : [para(`[Chèn ảnh vệ tinh vườn hộ ${l.chu} có ranh giới]`, { s: 9.5, i: true, al: "c", c: "C00000", before: 22, after: 0 }), para(`[插入农户${l.chu}地块卫星图]`, { s: 9, i: true, al: "c", c: "C00000", after: 22 })];
       return new D.TableRow({ cantSplit: true, children: [cell(info, IW, { va: D.VerticalAlign.CENTER }), cell(pics, PW, { va: D.VerticalAlign.CENTER })] });
     });
     ch.push(new D.Table({ columnWidths: [IW, PW], layout: D.TableLayoutType.FIXED, width: { size: W, type: D.WidthType.DXA }, rows: [hdr, ...rows] }));
@@ -2398,7 +2417,7 @@ function renderXuat() {
   modeSel.value = X.mode; modeSel.addEventListener("change", () => { X.mode = modeSel.value; X.endD = null; X.prevEnd = null; reset(); });
   const seasonCtl = [];
   if (X.mode === "vu") {
-    const yrSel = h("select", {}, [-2, -1, 0, 1].map(k => { const y = currentSeasonYear(cfg) + k; return h("option", { value: y }, `Vụ ${y} – ${y + 1}`); }));
+    const yrSel = h("select", {}, [...new Set([-2, -1, 0, 1].map(k => currentSeasonYear(cfg) + k).concat(X.year))].sort().map(y => { return h("option", { value: y }, `Vụ ${y} – ${y + 1}`); }));
     yrSel.value = X.year; yrSel.addEventListener("change", () => { X.year = +yrSel.value; reset(); });
     seasonCtl.push(h("label", { class: "f" }, "Mùa vụ", yrSel));
   } else {
@@ -2409,8 +2428,17 @@ function renderXuat() {
     seasonCtl.push(h("label", { class: "f" }, "Ngày kết thúc vụ (thu hoạch xong)", endI), h("label", { class: "f" }, "Thu hoạch xong vụ trước (tự tính, sửa được)", prevI));
   }
   const fromI = dIn(X.from), toI = dIn(X.to);
-  fromI.addEventListener("change", () => { const v = parseD(fromI.value); if (v != null) { X.from = v; renderXuat(); } });
-  toI.addEventListener("change", () => { const v = parseD(toI.value); if (v != null) { X.to = v; renderXuat(); } });
+  // typing a date that belongs to another season switches the season to it (only when the season follows the commune's start date)
+  const seasonOf = d => d >= seasonStartDn(cfg, yearOf(d)) ? yearOf(d) : yearOf(d) - 1;
+  const follow = (v, isTo) => {
+    if (X.mode !== "vu" || seasonOf(v) === X.year) return;
+    X.year = seasonOf(v); const p2 = buildPlan(r, cfg, X.year);
+    if (isTo) { if (X.from == null || X.from < p2.sStart || X.from > v) X.from = p2.sStart; }
+    else if (X.to == null || X.to < v || X.to > p2.sEnd) X.to = Math.min(Math.max(todayDn(), v), p2.sEnd);
+    toast(`Đã chuyển sang Vụ ${X.year} – ${X.year + 1} theo ngày bạn nhập.`);
+  };
+  fromI.addEventListener("change", () => { const v = parseD(fromI.value); if (v != null) { X.from = v; follow(v, false); renderXuat(); } });
+  toI.addEventListener("change", () => { const v = parseD(toI.value); if (v != null) { X.to = v; follow(v, true); renderXuat(); } });
   const fi = flowerIdx(cfg);
   const tailDays = fi >= 0 ? cfg.stages.slice(fi).reduce((a, s) => a + Math.max(1, Math.round(num(s.days))), 0) : 0;
   const spanNote = X.mode === "kt" ? [
@@ -2435,13 +2463,39 @@ function renderXuat() {
   const saveEd = () => persist("edits", pk);
   const issues = [...regionIssues(r), ...planIssues(r, cfg, plan, X.from, X.to), ...realIssues(r, cfg, plan, ed())];
   const nErr = issues.filter(x => x[0] === "err").length;
-  const isDraft = inR.some(e => e.kind === "mon" && !e.entered);
+  const isDraft = inR.some(e => e.kind === "mon" && !e.entered && e.d <= todayDn());
+  const nFuture = inR.filter(e => e.d > todayDn()).length;
   // official files only when every required (red) item is complete
-  const qErrs = X.withQ !== false ? qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").filter(x => x[0] === "err").map(x => `Phiếu khảo sát (06): thiếu ${x[1]}`) : [];
-  const nMonLeft = inR.filter(e => e.kind === "mon" && !e.entered).length;
-  const blockers = [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrs];
+  const qErrsNow = () => X.withQ !== false ? qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").filter(x => x[0] === "err").map(x => `Phiếu khảo sát (06): thiếu ${x[1]}`) : [];
+  const nMonLeft = inR.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).length;
+  const calcBlk = () => [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrsNow(), ...(nFuture ? [`Khoảng ngày đang chọn kéo đến ${fmt(X.to)}, có ${nFuture} việc sau hôm nay. Hồ sơ chính thức chỉ ghi việc đã làm: chọn “Đến ngày” là hôm nay hoặc sớm hơn (nút “Đầu vụ → hôm nay”).`] : [])];
+  let blockers = calcBlk();
+  // jump to the place where a red item is fixed
+  const flash = n => { if (!n) return false; n.scrollIntoView({ behavior: "smooth", block: "center" }); const c = n.closest(".card") || n; c.style.outline = "3px solid #f0b400"; setTimeout(() => c.style.outline = "", 2500); const f = n.matches("input,textarea,select") ? n : n.querySelector("input,textarea,select"); if (f) setTimeout(() => f.focus({ preventScroll: true }), 400); return true; };
+  const goH2 = (tab, title) => { if (UI.tab !== tab) { UI.tab = tab; render(); } setTimeout(() => flash([...document.querySelectorAll("#t-" + tab + " h2")].find(x => x.textContent.startsWith(title))), 50); };
+  const fixBtn = t => {
+    let lab = "Sửa", go = null, m;
+    if ((m = /^Phiếu khảo sát \(06\): thiếu (.+)$/.exec(t))) { const f = QF.find(x => x[2] === m[1]); lab = "Điền ngay"; go = () => flash(document.querySelector(`[data-q="${f ? f[0] : ""}"]`)) || goH2("xuat", "06 Phiếu khảo sát"); }
+    else if (/chưa nhập kết quả/.test(t)) { if (r.monNo) go = () => goH2("xuat", "Kết quả kiểm tra sâu bệnh thực tế"); else { lab = "Kiểm tra định kỳ không phát hiện gì: bật “Mặc định không phát hiện” cho cả vùng"; go = () => { const ck = document.querySelector("#monNoLbl input"); if (ck) { ck.scrollIntoView({ block: "center" }); ck.click(); } }; } }
+    else if (/sau hôm nay/.test(t)) { lab = "Đặt “Đến ngày” là hôm nay"; go = () => { X.to = Math.min(todayDn(), plan.sEnd); renderXuat(); }; }
+    else if (/tên thương phẩm/.test(t)) { lab = "Sửa tên thuốc trong quy trình"; go = () => goH2("quytrinh", "Phân bón, thuốc BVTV"); }
+    else if (/^(Vùng trồng|Nông hộ|Lô )/.test(t)) go = () => goH2("vung", /^Vùng trồng/.test(t) ? "Thông tin vùng trồng" : "Dữ liệu cần bổ sung");
+    else if (/^Công việc “/.test(t)) go = () => goH2("quytrinh", "Công việc canh tác");
+    else if (/chưa chọn thuốc/.test(t)) go = () => goH2("quytrinh", "Diễn biến sinh vật gây hại");
+    else if (/quá gần ngày thu hoạch/.test(t)) go = () => goH2("xuat", "Ngày ra hoa, thu hoạch của từng lô");
+    else if (/Phiếu khảo sát|Phụ lục/.test(t)) go = () => goH2("xuat", "06 Phiếu khảo sát");
+    return go ? h("button", { class: "btn sm" + (/Mặc định/.test(lab) ? " pri" : ""), style: "margin-left:8px", onclick: go }, lab + " →") : null;
+  };
   const btnZip = h("button", { class: blockers.length ? "btn" : "btn sm", onclick: () => doExport(null) }, blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)");
-  const btnOff = h("button", { class: "btn pri", disabled: blockers.length > 0, title: blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "", onclick: () => { if (!blockers.length) doExport(null, true); } }, "Tải tệp chính thức (.zip)");
+  const btnOff = h("button", { class: "btn pri", onclick: () => { if (!blockers.length) doExport(null, true); } }, "Tải tệp chính thức (.zip)");
+  const blkBox = h("div");
+  const drawBlk = () => {
+    blockers = calcBlk(); btnOff.disabled = blockers.length > 0; btnOff.title = blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "";
+    btnZip.className = blockers.length ? "btn" : "btn sm"; btnZip.textContent = blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)";
+    blkBox.replaceChildren(blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", { style: "margin:3px 0" }, t, fixBtn(t))), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
+      h("div", { style: "margin-top:4px" }, "Bấm nút cạnh từng mục để đến chỗ sửa. Bổ sung đủ thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."));
+  };  drawBlk();
+
   const one = (i, t) => h("button", { class: "btn sm", onclick: () => doExport(i) }, t);
   async function doExport(which, official) {
     const withQ = which === 5 || (which == null && X.withQ !== false);
@@ -2479,11 +2533,10 @@ function renderXuat() {
         SLx.on ? h("div", { class: "msg " + (SLx.over.length ? "warn" : "ok") }, `Nhật ký canh tác: ${SLx.after} dòng (bớt ${SLx.omit.size} trên ${SLx.before}), lô nhiều nhất ${SLx.maxLot} dòng.` + (SLx.over.length ? ` ${SLx.over.length} lô vẫn vượt ${r.maxNk} dòng vì số lần dùng phân thuốc, sâu bệnh, thu hoạch bắt buộc phải ghi (VD ${SLx.over.slice(0, 3).map(x => `${x[0]}: ${x[1]}`).join(", ")}). Muốn ít hơn thì phải giảm số lần bón, phun trong quy trình.` : "")) : null,
         r.maxNk && r.maxNk < nSt ? h("div", { class: "msg warn" }, `Giới hạn ${r.maxNk} dòng nhỏ hơn số giai đoạn (${nSt}); mỗi giai đoạn vẫn được giữ một dòng.`) : null); })(),
     h("h3", {}, "Kiểm tra trước khi xuất"),
-    issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m)) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
+    issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m, fixBtn(m))) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
     nErr ? h("p", { class: "muted" }, `Còn ${nErr} lỗi đỏ: vẫn xuất được để xem thử, nhưng nên sửa trước khi nộp.`) : null,
     isDraft ? h("div", { class: "msg err" }, "Bộ hồ sơ đang là BẢN NHÁP. Sau khi tải, xem lại các nội dung bôi đỏ trong file (lô chưa nhập đủ kết quả kiểm tra, cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát) và sửa trước khi nộp.") : null,
-    blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", {}, t)), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
-      h("div", { style: "margin-top:4px" }, "Bổ sung đủ các mục trên thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."),
+    blkBox,
     h("div", { class: "row", style: "margin-top:10px" }, btnOff, btnZip, one(0, "01 Canh tác"), one(1, "02 Sâu bệnh"), one(2, "03 Phân thuốc"), one(3, "04 ISPM 6"), one(4, "05 Ra vào"), one(5, "06 Phiếu khảo sát"))));
 
   // ---- FarmBase logbook import file
@@ -2587,7 +2640,7 @@ function renderXuat() {
       const secs = [...new Set(QF.map(f => f[1]))];
       qBox.replaceChildren(...secs.map(s => h("div", {}, h("h3", {}, s ? `${s}. ${QSEC[s][0]} / ${QSEC[s][1].replace(/^\d+\.\s*/, "")}${l2 === "en" ? " / " + QSEC[s][2] : ""}` : "Chung / 通用"), h("div", { class: "grid" }, QF.filter(f => f[1] === s).map(f => {
         const [k, , vn, cn, en, ty] = f; const u = r.q[k];
-        const save = () => { persist("regions", r.id); };
+        const save = () => { persist("regions", r.id); drawBlk(); };
         let ctl;
         if (ty === "yn") {
           ctl = h("select", { class: lvl(f) }, YN.map(([v, t]) => h("option", { value: v }, t))); ctl.value = u != null && u !== "" ? u : (A[k] || "");
@@ -2595,13 +2648,17 @@ function renderXuat() {
         } else if (ty === "s") {
           ctl = h("input", { value: u ?? "", placeholder: A[k] || "", class: lvl(f) });
           ctl.addEventListener("change", () => { r.q[k] = ctl.value.trim(); ctl.className = lvl(f); save(); });
+          ctl.addEventListener("input", () => { r.q[k] = ctl.value.trim(); ctl.className = lvl(f); drawBlk(); });
         } else {
           const a = A[k] || ["", "", ""]; const mk = (lang, ph) => { const t = h("textarea", { rows: 2, placeholder: ph || "", class: lang === "vn" ? lvl(f) : "" }); t.value = (u && u[lang]) || "";
-            t.addEventListener("change", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") t.className = lvl(f); save(); }); return t; };
+            t.addEventListener("change", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") t.className = lvl(f); save(); });
+            t.addEventListener("input", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") { t.className = lvl(f); drawBlk(); } }); return t; };
           ctl = h("div", {}, mk("vn", a[0] ? "Tự điền: " + a[0] : "Tiếng Việt"), mk(l2, a[ai] ? (l2 === "cn" ? "自动: " : "Auto: ") + a[ai] : `${L2N[l2]} (trống = dịch hoặc ghi tay)`));
         }
-        const red = Q_RED.includes(k) ? "color:#c00000;" : "";
-        return h("label", { class: "f", style: red + (ty === "b" ? "grid-column:1/-1" : "") }, l2 === "en" ? `${vn} / ${cn} / ${en}` : `${vn} / ${cn}`, ctl);
+        const lab = h("label", { class: "f", "data-q": k, style: ty === "b" ? "grid-column:1/-1" : "" }, l2 === "en" ? `${vn} / ${cn} / ${en}` : `${vn} / ${cn}`, ctl);
+        const paint = () => { lab.style.color = Q_RED.includes(k) && !qGet(r, A, k, l2)[0] ? "#c00000" : ""; };
+        lab.addEventListener("input", paint); lab.addEventListener("change", paint); paint();
+        return lab;
       })))));
     };
     drawQ();
@@ -2703,7 +2760,7 @@ function renderXuat() {
       fl.addEventListener("change", () => upd(x => { if (fl.value === "") delete x.fly; else x.fly = Math.max(0, Math.round(num(fl.value))); }));
       const ok = h("button", { class: "btn sm", title: "Đã kiểm tra ngoài vườn: không thấy sâu bệnh, bẫy 0 ruồi", onclick: () => upd(x => { x.obs = x.obs || {}; x.fly = x.fly ?? 0; }) }, "Không phát hiện");
       const rs = h("button", { class: "btn sm", title: "Xóa kết quả đã nhập của lần này", onclick: () => upd(x => { delete x.obs; delete x.fly; }) }, "↺");
-      return h("tr", {}, h("td", {}, fmt(m.d), h("div", { class: "muted" }, m.entered ? "đã nhập" : "mẫu – chưa nhập")), h("td", {}, m.stage.vn), ...cells, h("td", {}, fl), h("td", {}, m.entered ? null : ok, rs));
+      return h("tr", {}, h("td", {}, fmt(m.d), h("div", { class: "muted" }, m.autoNo ? "mặc định: không phát hiện" : m.entered ? "đã nhập" : m.d > todayDn() ? "chưa đến ngày" : "mẫu – chưa nhập")), h("td", {}, m.stage.vn), ...cells, h("td", {}, fl), h("td", {}, m.entered ? null : ok, rs));
     }));
     obsBox.replaceChildren(h("div", { class: "tw", style: "margin-top:8px;max-height:520px;overflow:auto" }, h("table", { class: "t" },
       h("thead", {}, h("tr", {}, h("th", {}, "Ngày kiểm tra"), h("th", {}, "Giai đoạn"), PE.map(p => h("th", { title: p.vn }, p.vn.replace(/\s*\(.*\)$/, ""))), h("th", {}, "Ruồi đục quả (bẫy)"), h("th", {}, ""))), tb)),
@@ -2713,7 +2770,81 @@ function renderXuat() {
     h("p", { class: "muted" }, "Mỗi dòng là một lần kiểm tra định kỳ. Chọn mức gây hại thấy ngoài vườn (“+phun” nếu có phun thuốc, thuốc lấy theo thuốc mặc định của sinh vật gây hại hoặc thuốc hộ đã mua). Ghi đúng số ruồi đục quả đếm được ở bẫy (kể cả 0). Lô còn lần kiểm tra chưa nhập thì hồ sơ in chữ BẢN NHÁP và ô số ruồi để trống."),
     h("div", { class: "row" }, lotSel1, h("button", { class: "btn sm", onclick: () => renderXuat() }, "Cập nhật kiểm tra"),
       h("button", { class: "btn sm", onclick: () => quickFill(false) }, "Điền nhanh “không phát hiện” – lô này"),
-      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), obsBox));
+      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), monNoBox(), waveBox(), obsBox));
+  // record one real outbreak across many lots at once: pest, level, treatment, stage (each lot's own stage dates)
+  function waveBox() {
+    const box = h("div", { style: "margin:8px 0;padding:10px 12px;border:1px solid var(--line, #dde3dc);border-radius:8px" });
+    const pSel = h("select", {}, PE.map(p => h("option", { value: p.id }, p.vn)));
+    const mSel = h("select", {}, MUC.map(m => h("option", { value: m[0] }, m[0])));
+    const xSel = h("select", {}, [["thucong", "Xử lý thủ công"], ["hoa", "Có phun thuốc"]].map(([v, t]) => h("option", { value: v }, t)));
+    const sSel = h("select", {}, plan.stages.map(s => h("option", { value: s.id }, s.vn)));
+    const which = h("select", {}, [["first", "Lần kiểm tra đầu tiên trong giai đoạn"], ["all", "Tất cả các lần kiểm tra trong giai đoạn"]].map(([v, t]) => h("option", { value: v }, t)));
+    const lotsSel = h("select", {}, h("option", { value: "all" }, "Tất cả các lô"), plan.lots.map(l => h("option", { value: l.k }, `${l.ma} – ${l.chu}`)));
+    // pick the checks of one stage (each lot uses its own stage dates), up to today
+    const picksFor = (sid, whichV, lots) => {
+      const today = todayDn(), picks = [];
+      for (const l of lots) {
+        const st = (l.Ls || plan.stages).find(s => s.id === sid); if (!st) continue;
+        const ms = plan.events.filter(e => e.kind === "mon" && !e.deleted && e.lot === l.k && e.d >= st.start && e.d <= st.end && e.d >= X.from && e.d <= Math.min(X.to, today)).sort((a, b) => a.d - b.d);
+        picks.push(...(whichV === "all" ? ms : ms.slice(0, 1)));
+      }
+      return picks;
+    };
+    const record = (o, picks, pid, val) => { for (const m of picks) { const x = { ...(o[m.key] || {}) }; x.obs = { ...(x.obs || {}), [pid]: val }; if (x.fly == null) x.fly = 0; o[m.key] = x; } };
+    const apply = async () => {
+      const pid = pSel.value, val = `${mSel.value}|${xSel.value}`, sid = sSel.value;
+      const lots = lotsSel.value === "all" ? plan.lots : plan.lots.filter(l => l.k === lotsSel.value);
+      const picks = picksFor(sid, which.value, lots);
+      if (!picks.length) { toast("Không có lần kiểm tra nào (đến hôm nay) trong giai đoạn này."); return; }
+      const pn = PE.find(p => p.id === pid).vn;
+      if (!await ask(`Ghi nhận ${pn} – mức ${mSel.value}${xSel.value === "hoa" ? ", có phun thuốc" : ", xử lý thủ công"} vào ${picks.length} lần kiểm tra (${new Set(picks.map(e => e.lot)).size} lô), giai đoạn “${sSel.selectedOptions[0].text}”.\n\nĐây là kết quả kiểm tra thực tế ngoài vườn. Ruồi đục quả ở các lần này giữ số đã nhập, chưa nhập thì ghi 0.\n\nTiếp tục?`)) return;
+      const o = ed(); record(o, picks, pid, val);
+      saveEd(); toast(`Đã ghi nhận ${pn} vào ${picks.length} lần kiểm tra.`); renderXuat();
+    };
+    // batch: every outbreak of the process (quarantine pests and fruit fly left out), the user ticks the ones that occurred
+    const isQuar = p => p.trap || /rệp sáp/i.test(p.vn);
+    const batchOcc = cfg.occ.filter(o => { const p = PE.find(x => x.id === o.pest); return p && !isQuar(p) && plan.stages.some(s => s.id === o.stage); });
+    const batchBox = h("div", { style: "display:none;margin-top:8px;padding:8px 10px;background:var(--soft, #f4f7f3);border-radius:8px" });
+    const drawBatch = () => {
+      const cks = batchOcc.map(o => ({ o, ck: h("input", { type: "checkbox", checked: true }) }));
+      batchBox.replaceChildren(h("div", { class: "muted", style: "font-size:12px;margin-bottom:4px" }, "Các đợt sâu bệnh theo quy trình (không gồm ruồi đục quả và rệp sáp, là đối tượng kiểm dịch). Bỏ tích đợt nào vườn không gặp. Mỗi đợt ghi vào lần kiểm tra đầu tiên của giai đoạn, cho tất cả các lô, đến hôm nay."),
+        ...cks.map(({ o, ck }) => { const p = PE.find(x => x.id === o.pest), st = plan.stages.find(x => x.id === o.stage); return h("label", { class: "row", style: "gap:6px;margin:2px 0" }, ck, `${p.vn} · ${st.vn} · mức ${o.muc} · ${o.xuLy === "hoa" ? "có phun thuốc" : "xử lý thủ công"}`); }),
+        h("div", { class: "row", style: "margin-top:6px" }, h("button", { class: "btn sm pri", onclick: async () => {
+          const sel = cks.filter(c => c.ck.checked).map(c => c.o); if (!sel.length) { toast("Chưa chọn đợt nào."); return; }
+          const jobs = sel.map(o => ({ o, picks: picksFor(o.stage, "first", plan.lots) })).filter(j => j.picks.length);
+          const n = jobs.reduce((a, j) => a + j.picks.length, 0);
+          if (!n) { toast("Các giai đoạn đã chọn chưa có lần kiểm tra nào đến hôm nay."); return; }
+          if (!await ask(`Ghi nhận ${jobs.length} đợt sâu bệnh vào ${n} lần kiểm tra của ${plan.lots.length} lô.${r.monNo ? "" : " Các lần kiểm tra còn lại (đến hôm nay) ghi không phát hiện; ruồi đục quả 0."}\n\nBạn xác nhận các đợt này đúng là đã gặp ngoài vườn (người kiểm tra sẽ ký nhật ký 02, 04). Rệp sáp không ghi.\n\nTiếp tục?`)) return;
+          if (!r.monNo) { r.monNo = dmy(todayDn()); persist("regions", r.id); }
+          const o = ed(); for (const j of jobs) record(o, j.picks, j.o.pest, `${j.o.muc}|${j.o.xuLy === "hoa" ? "hoa" : "thucong"}`);
+          saveEd(); toast(`Đã ghi nhận ${jobs.length} đợt vào ${n} lần kiểm tra.`); renderXuat();
+        } }, "Ghi nhận các đợt đã chọn"), h("button", { class: "btn sm", onclick: () => { batchBox.style.display = "none"; } }, "Đóng")));
+    };
+    const batchBtn = batchOcc.length ? h("button", { class: "btn sm", onclick: () => { drawBatch(); batchBox.style.display = ""; } }, `Ghi nhận các đợt theo quy trình (${batchOcc.length} đợt)…`) : null;
+    // suggestions from the process (sample occurrences): they only fill the form, the user decides
+    const sug = cfg.occ.filter(o => PE.some(p => p.id === o.pest) && plan.stages.some(s => s.id === o.stage)).map(o => {
+      const p = PE.find(x => x.id === o.pest), s = plan.stages.find(x => x.id === o.stage);
+      return h("button", { class: "btn sm", title: "Điền vào form; bấm Ghi nhận nếu thực tế có xuất hiện", onclick: () => { pSel.value = o.pest; mSel.value = o.muc; xSel.value = o.xuLy === "hoa" ? "hoa" : "thucong"; sSel.value = o.stage; } }, `${p.vn.replace(/\s*\(.*\)$/, "")} · ${s.vn} · ${o.muc}`);
+    });
+    box.append(h("b", {}, "Ghi nhận sâu bệnh theo đợt cho nhiều lô"),
+      h("p", { class: "muted", style: "margin:4px 0 6px" }, "Khi một loại sâu bệnh xuất hiện trong một giai đoạn, ghi một lần cho tất cả các lô (hoặc một lô). Mỗi lô dùng ngày giai đoạn của chính lô đó. Ruồi đục quả mặc định 0; các lần không ghi nhận gì theo ô “Mặc định không phát hiện”."),
+      h("div", { class: "row" }, pSel, mSel, xSel, sSel, which, lotsSel, h("button", { class: "btn sm pri", onclick: apply }, "Ghi nhận")),
+      sug.length ? h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" }, h("span", { class: "muted", style: "font-size:12px" }, "Gợi ý theo quy trình (bấm để điền form):"), ...sug) : null,
+      batchBtn ? h("div", { style: "margin-top:6px" }, batchBtn) : null, batchBox);
+    return box;
+  }
+  function monNoBox() {
+    const ck = h("input", { type: "checkbox", checked: !!r.monNo });
+    ck.addEventListener("change", async () => {
+      if (ck.checked) {
+        if (!await ask(`Bật cho cả vùng “${r.info.ten}”: mọi lần kiểm tra định kỳ đến hôm nay mà không nhập gì sẽ được ghi là không phát hiện sâu bệnh, bẫy 0 ruồi. Các ngày tiếp theo cũng tự tính như vậy khi đến ngày.\n\nChỉ bật khi cán bộ, nông hộ thực sự kiểm tra vườn theo lịch và không phát hiện gì. Lần nào có phát hiện thì vẫn nhập riêng ở bảng dưới (kết quả nhập tay luôn được ưu tiên).\n\nBật?`)) { ck.checked = false; return; }
+        r.monNo = dmy(todayDn());
+      } else r.monNo = "";
+      persist("regions", r.id); renderXuat();
+    });
+    return h("label", { id: "monNoLbl", class: "row", style: "gap:6px;margin:8px 0;padding:8px 10px;border:1px solid var(--line, #dde3dc);border-radius:8px" }, ck,
+      h("span", {}, h("b", {}, "Mặc định “không phát hiện” cho cả vùng"), r.monNo ? ` (bật từ ${r.monNo})` : "", h("span", { class: "muted" }, " – không cần xác nhận từng vườn: ruồi đục quả 0 và các lần kiểm tra không ghi nhận sâu bệnh được tính là không phát hiện. Sâu bệnh có xuất hiện thì ghi theo đợt ở khung dưới.")));
+  }
   async function quickFill(all) {
     const today = todayDn();
     const mons = plan.events.filter(e => e.kind === "mon" && !e.deleted && !e.entered && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d <= today);
@@ -2768,7 +2899,7 @@ function realIssues(r, cfg, plan, edits) {
   const usedPest = new Map();
   for (const e of plan.active) for (const x of e.prods) if (isPesticide(x.p)) usedPest.set(x.p.id + "|" + x.p.ten, x.p);
   const generic = [...usedPest.values()].filter(p => /^thuốc chứa/i.test(p.ten)).map(p => p.ten);
-  if (generic.length) out.push(["err", `Tên thuốc chưa phải tên thương phẩm: ${[...new Set(generic)].join(", ")}. Nhập tên trên nhãn hoặc hóa đơn ở mục “Vật tư thực tế của từng hộ” (hoặc sửa trong quy trình).`]);
+  if (generic.length) out.push(["warn", `Tên thuốc chưa phải tên thương phẩm: ${[...new Set(generic)].join(", ")}. Nhập tên trên nhãn hoặc hóa đơn ở mục “Vật tư thực tế của từng hộ” (hoặc sửa trong quy trình).`]);
   const noNd = [...usedPest.values()].filter(p => !(num(p.nd) > 0)).map(p => p.ten);
   if (noNd.length) out.push(["warn", `Chưa có nồng độ pha theo nhãn: ${[...new Set(noNd)].join(", ")}. Hồ sơ đang ghi “theo liều trên nhãn”; VietGAP yêu cầu ghi nồng độ và lượng dùng.`]);
   const noAge = plan.lots.filter(l => l.age == null).length;
