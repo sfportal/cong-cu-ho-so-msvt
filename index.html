@@ -1777,7 +1777,7 @@ function buildQ(r, cfg, plan, from, to) {
   // labels: Chinese / Vietnamese (English added only for the Vietnamese + English version)
   const labelParas = k => { const f = f_(k); return [new D.Paragraph({ spacing: { after: 0 }, children: [run(f[3] + " / ", { c: LB }), ...(EN ? [run(f[4] + " / ", { c: LB })] : []), run(f[2], { b: true })] })]; };
   const valParas = k => {
-    const [vn, sec] = V(k); const red = Q_RED.includes(k) ? "C00000" : undefined;
+    const [vn, sec] = V(k); const red = undefined;
     if (!vn && !sec) return [new D.Paragraph({ spacing: { after: 0 }, children: [run("……………………", { c: "C00000" })] })];
     const out = [];
     if (vn) String(vn).split("\n").forEach(t => out.push(new D.Paragraph({ spacing: { after: 0 }, children: [run(t, { c: red })] })));
@@ -2645,8 +2645,10 @@ function renderXuat() {
             t.addEventListener("input", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") { t.className = lvl(f); drawBlk(); } }); return t; };
           ctl = h("div", {}, mk("vn", a[0] ? "Tự điền: " + a[0] : "Tiếng Việt"), mk(l2, a[ai] ? (l2 === "cn" ? "自动: " : "Auto: ") + a[ai] : `${L2N[l2]} (trống = dịch hoặc ghi tay)`));
         }
-        const red = Q_RED.includes(k) ? "color:#c00000;" : "";
-        return h("label", { class: "f", "data-q": k, style: red + (ty === "b" ? "grid-column:1/-1" : "") }, l2 === "en" ? `${vn} / ${cn} / ${en}` : `${vn} / ${cn}`, ctl);
+        const lab = h("label", { class: "f", "data-q": k, style: ty === "b" ? "grid-column:1/-1" : "" }, l2 === "en" ? `${vn} / ${cn} / ${en}` : `${vn} / ${cn}`, ctl);
+        const paint = () => { lab.style.color = Q_RED.includes(k) && !qGet(r, A, k, l2)[0] ? "#c00000" : ""; };
+        lab.addEventListener("input", paint); lab.addEventListener("change", paint); paint();
+        return lab;
       })))));
     };
     drawQ();
@@ -2802,7 +2804,8 @@ function renderXuat() {
           const jobs = sel.map(o => ({ o, picks: picksFor(o.stage, "first", plan.lots) })).filter(j => j.picks.length);
           const n = jobs.reduce((a, j) => a + j.picks.length, 0);
           if (!n) { toast("Các giai đoạn đã chọn chưa có lần kiểm tra nào đến hôm nay."); return; }
-          if (!await ask(`Ghi nhận ${jobs.length} đợt sâu bệnh vào ${n} lần kiểm tra của ${plan.lots.length} lô.\n\nBạn xác nhận các đợt này đúng là đã gặp ngoài vườn (người kiểm tra sẽ ký nhật ký 02, 04). Ruồi đục quả 0, rệp sáp không ghi.\n\nTiếp tục?`)) return;
+          if (!await ask(`Ghi nhận ${jobs.length} đợt sâu bệnh vào ${n} lần kiểm tra của ${plan.lots.length} lô.${r.monNo ? "" : " Các lần kiểm tra còn lại (đến hôm nay) ghi không phát hiện; ruồi đục quả 0."}\n\nBạn xác nhận các đợt này đúng là đã gặp ngoài vườn (người kiểm tra sẽ ký nhật ký 02, 04). Rệp sáp không ghi.\n\nTiếp tục?`)) return;
+          if (!r.monNo) { r.monNo = dmy(todayDn()); persist("regions", r.id); }
           const o = ed(); for (const j of jobs) record(o, j.picks, j.o.pest, `${j.o.muc}|${j.o.xuLy === "hoa" ? "hoa" : "thucong"}`);
           saveEd(); toast(`Đã ghi nhận ${jobs.length} đợt vào ${n} lần kiểm tra.`); renderXuat();
         } }, "Ghi nhận các đợt đã chọn"), h("button", { class: "btn sm", onclick: () => { batchBox.style.display = "none"; } }, "Đóng")));
