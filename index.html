@@ -2706,7 +2706,42 @@ function renderXuat() {
     h("p", { class: "muted" }, "Mỗi dòng là một lần kiểm tra định kỳ. Chọn mức gây hại thấy ngoài vườn (“+phun” nếu có phun thuốc, thuốc lấy theo thuốc mặc định của sinh vật gây hại hoặc thuốc hộ đã mua). Ghi đúng số ruồi đục quả đếm được ở bẫy (kể cả 0). Lô còn lần kiểm tra chưa nhập thì hồ sơ in chữ BẢN NHÁP và ô số ruồi để trống."),
     h("div", { class: "row" }, lotSel1, h("button", { class: "btn sm", onclick: () => renderXuat() }, "Cập nhật kiểm tra"),
       h("button", { class: "btn sm", onclick: () => quickFill(false) }, "Điền nhanh “không phát hiện” – lô này"),
-      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), monNoBox(), obsBox));
+      h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), monNoBox(), waveBox(), obsBox));
+  // record one real outbreak across many lots at once: pest, level, treatment, stage (each lot's own stage dates)
+  function waveBox() {
+    const box = h("div", { style: "margin:8px 0;padding:10px 12px;border:1px solid var(--line, #dde3dc);border-radius:8px" });
+    const pSel = h("select", {}, PE.map(p => h("option", { value: p.id }, p.vn)));
+    const mSel = h("select", {}, MUC.map(m => h("option", { value: m[0] }, m[0])));
+    const xSel = h("select", {}, [["thucong", "Xử lý thủ công"], ["hoa", "Có phun thuốc"]].map(([v, t]) => h("option", { value: v }, t)));
+    const sSel = h("select", {}, plan.stages.map(s => h("option", { value: s.id }, s.vn)));
+    const which = h("select", {}, [["first", "Lần kiểm tra đầu tiên trong giai đoạn"], ["all", "Tất cả các lần kiểm tra trong giai đoạn"]].map(([v, t]) => h("option", { value: v }, t)));
+    const lotsSel = h("select", {}, h("option", { value: "all" }, "Tất cả các lô"), plan.lots.map(l => h("option", { value: l.k }, `${l.ma} – ${l.chu}`)));
+    const apply = async () => {
+      const pid = pSel.value, val = `${mSel.value}|${xSel.value}`, sid = sSel.value, today = todayDn();
+      const lots = lotsSel.value === "all" ? plan.lots : plan.lots.filter(l => l.k === lotsSel.value);
+      const picks = [];
+      for (const l of lots) {
+        const st = (l.Ls || plan.stages).find(s => s.id === sid); if (!st) continue;
+        const ms = plan.events.filter(e => e.kind === "mon" && !e.deleted && e.lot === l.k && e.d >= st.start && e.d <= st.end && e.d >= X.from && e.d <= Math.min(X.to, today)).sort((a, b) => a.d - b.d);
+        picks.push(...(which.value === "all" ? ms : ms.slice(0, 1)));
+      }
+      if (!picks.length) { toast("Không có lần kiểm tra nào (đến hôm nay) trong giai đoạn này."); return; }
+      const pn = PE.find(p => p.id === pid).vn;
+      if (!await ask(`Ghi nhận ${pn} – mức ${mSel.value}${xSel.value === "hoa" ? ", có phun thuốc" : ", xử lý thủ công"} vào ${picks.length} lần kiểm tra (${new Set(picks.map(e => e.lot)).size} lô), giai đoạn “${sSel.selectedOptions[0].text}”.\n\nĐây là kết quả kiểm tra thực tế ngoài vườn. Ruồi đục quả ở các lần này giữ số đã nhập, chưa nhập thì ghi 0.\n\nTiếp tục?`)) return;
+      const o = ed(); for (const m of picks) { const x = { ...(o[m.key] || {}) }; x.obs = { ...(x.obs || {}), [pid]: val }; if (x.fly == null) x.fly = 0; o[m.key] = x; }
+      saveEd(); toast(`Đã ghi nhận ${pn} vào ${picks.length} lần kiểm tra.`); renderXuat();
+    };
+    // suggestions from the process (sample occurrences): they only fill the form, the user decides
+    const sug = cfg.occ.filter(o => PE.some(p => p.id === o.pest) && plan.stages.some(s => s.id === o.stage)).map(o => {
+      const p = PE.find(x => x.id === o.pest), s = plan.stages.find(x => x.id === o.stage);
+      return h("button", { class: "btn sm", title: "Điền vào form; bấm Ghi nhận nếu thực tế có xuất hiện", onclick: () => { pSel.value = o.pest; mSel.value = o.muc; xSel.value = o.xuLy === "hoa" ? "hoa" : "thucong"; sSel.value = o.stage; } }, `${p.vn.replace(/\s*\(.*\)$/, "")} · ${s.vn} · ${o.muc}`);
+    });
+    box.append(h("b", {}, "Ghi nhận sâu bệnh theo đợt cho nhiều lô"),
+      h("p", { class: "muted", style: "margin:4px 0 6px" }, "Khi một loại sâu bệnh xuất hiện trong một giai đoạn, ghi một lần cho tất cả các lô (hoặc một lô). Mỗi lô dùng ngày giai đoạn của chính lô đó. Ruồi đục quả mặc định 0; các lần không ghi nhận gì theo ô “Mặc định không phát hiện”."),
+      h("div", { class: "row" }, pSel, mSel, xSel, sSel, which, lotsSel, h("button", { class: "btn sm pri", onclick: apply }, "Ghi nhận")),
+      sug.length ? h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" }, h("span", { class: "muted", style: "font-size:12px" }, "Gợi ý theo quy trình (bấm để điền form):"), ...sug) : null);
+    return box;
+  }
   function monNoBox() {
     const ck = h("input", { type: "checkbox", checked: !!r.monNo });
     ck.addEventListener("change", async () => {
@@ -2717,7 +2752,7 @@ function renderXuat() {
       persist("regions", r.id); renderXuat();
     });
     return h("label", { class: "row", style: "gap:6px;margin:8px 0;padding:8px 10px;border:1px solid var(--line, #dde3dc);border-radius:8px" }, ck,
-      h("span", {}, h("b", {}, "Mặc định “không phát hiện” cho cả vùng"), r.monNo ? ` (bật từ ${r.monNo})` : "", h("span", { class: "muted" }, " – không cần xác nhận từng vườn; các lần kiểm tra đến hôm nay chưa nhập được ghi là không phát hiện, 0 ruồi. Lần có phát hiện thì nhập ở bảng dưới.")));
+      h("span", {}, h("b", {}, "Mặc định “không phát hiện” cho cả vùng"), r.monNo ? ` (bật từ ${r.monNo})` : "", h("span", { class: "muted" }, " – không cần xác nhận từng vườn: ruồi đục quả 0 và các lần kiểm tra không ghi nhận sâu bệnh được tính là không phát hiện. Sâu bệnh có xuất hiện thì ghi theo đợt ở khung dưới.")));
   }
   async function quickFill(all) {
     const today = todayDn();
