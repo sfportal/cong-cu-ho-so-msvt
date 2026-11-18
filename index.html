@@ -1033,8 +1033,8 @@ function planIssues(r, cfg, plan, from, to) {
   cfg.tasks.forEach(t => { if (!plan.stages.find(s => s.id === t.stage)) out.push(["err", `Công việc “${t.vn}” chưa chọn giai đoạn.`]); });
   const usedP = new Map(); for (const e of plan.active) for (const { p } of e.prods) usedP.set(p.id, p);
   [...usedP.values()].filter(isPesticide).forEach(p => {
-    if (p.phi === "" || p.phi == null) out.push(["err", `${p.ten}: chưa có thời gian cách ly (ngày) theo nhãn.`]);
-    if (!p.hoatChat) out.push(["err", `${p.ten}: chưa có hoạt chất.`]);
+    if (p.phi === "" || p.phi == null) out.push(["warn", `${p.ten}: chưa có thời gian cách ly (ngày) theo nhãn, hồ sơ ghi “theo nhãn”. Nên bổ sung ở tab 2.`]);
+    if (!p.hoatChat) out.push(["warn", `${p.ten}: chưa có hoạt chất. Nên bổ sung ở tab 2.`]);
   });
   const notChecked = [...usedP.values()].filter(p => isPesticide(p) && !p.dk).map(p => p.ten);
   if (notChecked.length) out.push(["warn", `Chưa đánh dấu đã đối chiếu Danh mục thuốc BVTV được phép và nhãn (đăng ký trên sầu riêng, liều, cách ly, MRL Trung Quốc): ${notChecked.join(", ")}.`]);
@@ -2484,7 +2484,7 @@ function renderXuat() {
     issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m)) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
     nErr ? h("p", { class: "muted" }, `Còn ${nErr} lỗi đỏ: vẫn xuất được để xem thử, nhưng nên sửa trước khi nộp.`) : null,
     isDraft ? h("div", { class: "msg err" }, "Bộ hồ sơ đang là BẢN NHÁP. Sau khi tải, xem lại các nội dung bôi đỏ trong file (lô chưa nhập đủ kết quả kiểm tra, cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát) và sửa trước khi nộp.") : null,
-    blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", {}, t)), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
+    blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", {}, t, /chưa nhập kết quả/.test(t) && !r.monNo ? h("div", { style: "margin-top:4px" }, h("button", { class: "btn sm pri", onclick: () => { const ck = document.querySelector("#monNoLbl input"); if (ck) { ck.scrollIntoView({ block: "center" }); ck.click(); } } }, "Kiểm tra định kỳ không phát hiện gì: bật “Mặc định không phát hiện” cho cả vùng")) : null)), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
       h("div", { style: "margin-top:4px" }, "Bổ sung đủ các mục trên thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."),
     h("div", { class: "row", style: "margin-top:10px" }, btnOff, btnZip, one(0, "01 Canh tác"), one(1, "02 Sâu bệnh"), one(2, "03 Phân thuốc"), one(3, "04 ISPM 6"), one(4, "05 Ra vào"), one(5, "06 Phiếu khảo sát"))));
 
@@ -2760,7 +2760,7 @@ function renderXuat() {
       } else r.monNo = "";
       persist("regions", r.id); renderXuat();
     });
-    return h("label", { class: "row", style: "gap:6px;margin:8px 0;padding:8px 10px;border:1px solid var(--line, #dde3dc);border-radius:8px" }, ck,
+    return h("label", { id: "monNoLbl", class: "row", style: "gap:6px;margin:8px 0;padding:8px 10px;border:1px solid var(--line, #dde3dc);border-radius:8px" }, ck,
       h("span", {}, h("b", {}, "Mặc định “không phát hiện” cho cả vùng"), r.monNo ? ` (bật từ ${r.monNo})` : "", h("span", { class: "muted" }, " – không cần xác nhận từng vườn: ruồi đục quả 0 và các lần kiểm tra không ghi nhận sâu bệnh được tính là không phát hiện. Sâu bệnh có xuất hiện thì ghi theo đợt ở khung dưới.")));
   }
   async function quickFill(all) {
