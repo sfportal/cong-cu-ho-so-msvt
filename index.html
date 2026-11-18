@@ -2390,7 +2390,7 @@ function renderXuat() {
   modeSel.value = X.mode; modeSel.addEventListener("change", () => { X.mode = modeSel.value; X.endD = null; X.prevEnd = null; reset(); });
   const seasonCtl = [];
   if (X.mode === "vu") {
-    const yrSel = h("select", {}, [-2, -1, 0, 1].map(k => { const y = currentSeasonYear(cfg) + k; return h("option", { value: y }, `Vụ ${y} – ${y + 1}`); }));
+    const yrSel = h("select", {}, [...new Set([-2, -1, 0, 1].map(k => currentSeasonYear(cfg) + k).concat(X.year))].sort().map(y => { return h("option", { value: y }, `Vụ ${y} – ${y + 1}`); }));
     yrSel.value = X.year; yrSel.addEventListener("change", () => { X.year = +yrSel.value; reset(); });
     seasonCtl.push(h("label", { class: "f" }, "Mùa vụ", yrSel));
   } else {
@@ -2401,8 +2401,17 @@ function renderXuat() {
     seasonCtl.push(h("label", { class: "f" }, "Ngày kết thúc vụ (thu hoạch xong)", endI), h("label", { class: "f" }, "Thu hoạch xong vụ trước (tự tính, sửa được)", prevI));
   }
   const fromI = dIn(X.from), toI = dIn(X.to);
-  fromI.addEventListener("change", () => { const v = parseD(fromI.value); if (v != null) { X.from = v; renderXuat(); } });
-  toI.addEventListener("change", () => { const v = parseD(toI.value); if (v != null) { X.to = v; renderXuat(); } });
+  // typing a date that belongs to another season switches the season to it (only when the season follows the commune's start date)
+  const seasonOf = d => d >= seasonStartDn(cfg, yearOf(d)) ? yearOf(d) : yearOf(d) - 1;
+  const follow = (v, isTo) => {
+    if (X.mode !== "vu" || seasonOf(v) === X.year) return;
+    X.year = seasonOf(v); const p2 = buildPlan(r, cfg, X.year);
+    if (isTo) { if (X.from == null || X.from < p2.sStart || X.from > v) X.from = p2.sStart; }
+    else if (X.to == null || X.to < v || X.to > p2.sEnd) X.to = Math.min(Math.max(todayDn(), v), p2.sEnd);
+    toast(`Đã chuyển sang Vụ ${X.year} – ${X.year + 1} theo ngày bạn nhập.`);
+  };
+  fromI.addEventListener("change", () => { const v = parseD(fromI.value); if (v != null) { X.from = v; follow(v, false); renderXuat(); } });
+  toI.addEventListener("change", () => { const v = parseD(toI.value); if (v != null) { X.to = v; follow(v, true); renderXuat(); } });
   const fi = flowerIdx(cfg);
   const tailDays = fi >= 0 ? cfg.stages.slice(fi).reduce((a, s) => a + Math.max(1, Math.round(num(s.days))), 0) : 0;
   const spanNote = X.mode === "kt" ? [
