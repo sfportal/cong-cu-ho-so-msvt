@@ -2768,21 +2768,46 @@ function renderXuat() {
     const sSel = h("select", {}, plan.stages.map(s => h("option", { value: s.id }, s.vn)));
     const which = h("select", {}, [["first", "Lần kiểm tra đầu tiên trong giai đoạn"], ["all", "Tất cả các lần kiểm tra trong giai đoạn"]].map(([v, t]) => h("option", { value: v }, t)));
     const lotsSel = h("select", {}, h("option", { value: "all" }, "Tất cả các lô"), plan.lots.map(l => h("option", { value: l.k }, `${l.ma} – ${l.chu}`)));
-    const apply = async () => {
-      const pid = pSel.value, val = `${mSel.value}|${xSel.value}`, sid = sSel.value, today = todayDn();
-      const lots = lotsSel.value === "all" ? plan.lots : plan.lots.filter(l => l.k === lotsSel.value);
-      const picks = [];
+    // pick the checks of one stage (each lot uses its own stage dates), up to today
+    const picksFor = (sid, whichV, lots) => {
+      const today = todayDn(), picks = [];
       for (const l of lots) {
         const st = (l.Ls || plan.stages).find(s => s.id === sid); if (!st) continue;
         const ms = plan.events.filter(e => e.kind === "mon" && !e.deleted && e.lot === l.k && e.d >= st.start && e.d <= st.end && e.d >= X.from && e.d <= Math.min(X.to, today)).sort((a, b) => a.d - b.d);
-        picks.push(...(which.value === "all" ? ms : ms.slice(0, 1)));
+        picks.push(...(whichV === "all" ? ms : ms.slice(0, 1)));
       }
+      return picks;
+    };
+    const record = (o, picks, pid, val) => { for (const m of picks) { const x = { ...(o[m.key] || {}) }; x.obs = { ...(x.obs || {}), [pid]: val }; if (x.fly == null) x.fly = 0; o[m.key] = x; } };
+    const apply = async () => {
+      const pid = pSel.value, val = `${mSel.value}|${xSel.value}`, sid = sSel.value;
+      const lots = lotsSel.value === "all" ? plan.lots : plan.lots.filter(l => l.k === lotsSel.value);
+      const picks = picksFor(sid, which.value, lots);
       if (!picks.length) { toast("Không có lần kiểm tra nào (đến hôm nay) trong giai đoạn này."); return; }
       const pn = PE.find(p => p.id === pid).vn;
       if (!await ask(`Ghi nhận ${pn} – mức ${mSel.value}${xSel.value === "hoa" ? ", có phun thuốc" : ", xử lý thủ công"} vào ${picks.length} lần kiểm tra (${new Set(picks.map(e => e.lot)).size} lô), giai đoạn “${sSel.selectedOptions[0].text}”.\n\nĐây là kết quả kiểm tra thực tế ngoài vườn. Ruồi đục quả ở các lần này giữ số đã nhập, chưa nhập thì ghi 0.\n\nTiếp tục?`)) return;
-      const o = ed(); for (const m of picks) { const x = { ...(o[m.key] || {}) }; x.obs = { ...(x.obs || {}), [pid]: val }; if (x.fly == null) x.fly = 0; o[m.key] = x; }
+      const o = ed(); record(o, picks, pid, val);
       saveEd(); toast(`Đã ghi nhận ${pn} vào ${picks.length} lần kiểm tra.`); renderXuat();
     };
+    // batch: every outbreak of the process (quarantine pests and fruit fly left out), the user ticks the ones that occurred
+    const isQuar = p => p.trap || /rệp sáp/i.test(p.vn);
+    const batchOcc = cfg.occ.filter(o => { const p = PE.find(x => x.id === o.pest); return p && !isQuar(p) && plan.stages.some(s => s.id === o.stage); });
+    const batchBox = h("div", { style: "display:none;margin-top:8px;padding:8px 10px;background:var(--soft, #f4f7f3);border-radius:8px" });
+    const drawBatch = () => {
+      const cks = batchOcc.map(o => ({ o, ck: h("input", { type: "checkbox", checked: true }) }));
+      batchBox.replaceChildren(h("div", { class: "muted", style: "font-size:12px;margin-bottom:4px" }, "Các đợt sâu bệnh theo quy trình (không gồm ruồi đục quả và rệp sáp, là đối tượng kiểm dịch). Bỏ tích đợt nào vườn không gặp. Mỗi đợt ghi vào lần kiểm tra đầu tiên của giai đoạn, cho tất cả các lô, đến hôm nay."),
+        ...cks.map(({ o, ck }) => { const p = PE.find(x => x.id === o.pest), st = plan.stages.find(x => x.id === o.stage); return h("label", { class: "row", style: "gap:6px;margin:2px 0" }, ck, `${p.vn} · ${st.vn} · mức ${o.muc} · ${o.xuLy === "hoa" ? "có phun thuốc" : "xử lý thủ công"}`); }),
+        h("div", { class: "row", style: "margin-top:6px" }, h("button", { class: "btn sm pri", onclick: async () => {
+          const sel = cks.filter(c => c.ck.checked).map(c => c.o); if (!sel.length) { toast("Chưa chọn đợt nào."); return; }
+          const jobs = sel.map(o => ({ o, picks: picksFor(o.stage, "first", plan.lots) })).filter(j => j.picks.length);
+          const n = jobs.reduce((a, j) => a + j.picks.length, 0);
+          if (!n) { toast("Các giai đoạn đã chọn chưa có lần kiểm tra nào đến hôm nay."); return; }
+          if (!await ask(`Ghi nhận ${jobs.length} đợt sâu bệnh vào ${n} lần kiểm tra của ${plan.lots.length} lô.\n\nBạn xác nhận các đợt này đúng là đã gặp ngoài vườn (người kiểm tra sẽ ký nhật ký 02, 04). Ruồi đục quả 0, rệp sáp không ghi.\n\nTiếp tục?`)) return;
+          const o = ed(); for (const j of jobs) record(o, j.picks, j.o.pest, `${j.o.muc}|${j.o.xuLy === "hoa" ? "hoa" : "thucong"}`);
+          saveEd(); toast(`Đã ghi nhận ${jobs.length} đợt vào ${n} lần kiểm tra.`); renderXuat();
+        } }, "Ghi nhận các đợt đã chọn"), h("button", { class: "btn sm", onclick: () => { batchBox.style.display = "none"; } }, "Đóng")));
+    };
+    const batchBtn = batchOcc.length ? h("button", { class: "btn sm", onclick: () => { drawBatch(); batchBox.style.display = ""; } }, `Ghi nhận các đợt theo quy trình (${batchOcc.length} đợt)…`) : null;
     // suggestions from the process (sample occurrences): they only fill the form, the user decides
     const sug = cfg.occ.filter(o => PE.some(p => p.id === o.pest) && plan.stages.some(s => s.id === o.stage)).map(o => {
       const p = PE.find(x => x.id === o.pest), s = plan.stages.find(x => x.id === o.stage);
@@ -2791,7 +2816,8 @@ function renderXuat() {
     box.append(h("b", {}, "Ghi nhận sâu bệnh theo đợt cho nhiều lô"),
       h("p", { class: "muted", style: "margin:4px 0 6px" }, "Khi một loại sâu bệnh xuất hiện trong một giai đoạn, ghi một lần cho tất cả các lô (hoặc một lô). Mỗi lô dùng ngày giai đoạn của chính lô đó. Ruồi đục quả mặc định 0; các lần không ghi nhận gì theo ô “Mặc định không phát hiện”."),
       h("div", { class: "row" }, pSel, mSel, xSel, sSel, which, lotsSel, h("button", { class: "btn sm pri", onclick: apply }, "Ghi nhận")),
-      sug.length ? h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" }, h("span", { class: "muted", style: "font-size:12px" }, "Gợi ý theo quy trình (bấm để điền form):"), ...sug) : null);
+      sug.length ? h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" }, h("span", { class: "muted", style: "font-size:12px" }, "Gợi ý theo quy trình (bấm để điền form):"), ...sug) : null,
+      batchBtn ? h("div", { style: "margin-top:6px" }, batchBtn) : null, batchBox);
     return box;
   }
   function monNoBox() {
