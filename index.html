@@ -133,13 +133,20 @@ function fromIso(s) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ""); retur
 function fromDMY(s) { const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(s || "").trim()); return m ? dn(+m[3], +m[2], +m[1]) : null; }
 function yearOf(n) { return new Date(n * DAY).getUTCFullYear(); }
 const monthOf = n => new Date(n * DAY).getUTCMonth() + 1;
-// purpose of a scheduled (preventive) spray: name the pests it prevents in that month, without claiming any was found
-const INSECT_RE = /^(rệp|rầy|sâu|mọt|nhện|bọ|ruồi|côn trùng)/i;
+// purpose of a scheduled (preventive) spray: name the pests the product's active ingredient controls (same text for the same product all season), without claiming any was found
+const SPECTRUM = [
+  [/propargite|hexythiazox|fenpyroximate|pyridaben|spirodiclofen|etoxazole/i, /nhện/i],
+  [/abamectin/i, /nhện|sâu ăn/i],
+  [/emamectin|bacillus|\bbt\b|chlorantraniliprole|indoxacarb|lufenuron|spinetoram/i, /^sâu/i],
+  [/thiamethoxam|imidacloprid|dinotefuran|clothianidin|acetamiprid|buprofezin|spirotetramat|pymetrozine/i, /rầy|rệp/i],
+  [/fosetyl|metalaxyl|dimethomorph|cymoxanil|phosphonate|trichoderma/i, /phytophthora|xì mủ|thối/i],
+  [/mancozeb|propineb|copper|đồng|oxychloride/i, /phytophthora|thán thư/i],
+  [/hexaconazole|difenoconazole|azoxystrobin|tebuconazole|propiconazole|carbendazim/i, /thán thư|cháy lá|héo/i]];
 function preventPurpose(cfg, P, p, t, d) {
   if (!isPesticide(p) || !["sau", "benh"].includes(p.loai)) return [t.vn, t.cn];
-  const m = monthOf(d), insect = p.loai === "sau";
-  const cand = cfg.pests.filter(v => !v.trap && inMonths(v.thang, m) && INSECT_RE.test(v.vn) === insect);
-  const tg = [...cand.filter(v => v.prod && (v.prod === p.id || v.prod === t.prod)), ...cand.filter(v => !(v.prod && (v.prod === p.id || v.prod === t.prod)))].slice(0, 3);
+  const hc = String(p.hoatChat || ""), res = SPECTRUM.filter(([a]) => a.test(hc)).map(x => x[1]);
+  const seen = new Set(), tg = cfg.pests.filter(v => !v.trap && ((v.prod && (v.prod === p.id || v.prod === t.prod)) || res.some(re => re.test(v.vn))))
+    .filter(v => { const k = hoKey(v.vn).split(" ").slice(0, 2).join(" "); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 3);
   if (!tg.length) return [t.vn, t.cn];
   const short = s => String(s).replace(/\s*[（(].*[)）]\s*$/, "");
   return [`${t.vn} – phòng ngừa ${tg.map(v => short(v.vn)).join(", ")} theo quy trình`, `${t.cn} – 按规程预防${tg.map(v => short(v.cn)).join("、")}`];
@@ -1895,6 +1902,7 @@ function buildQ(r, cfg, plan, from, to) {
 function qIssues(r, A, l2 = "cn") {
   const out = [];
   for (const f of QF) { if (f[0] === "cdPhanGhiChu" && qGet(r, A, "cdPhan", l2)[0] !== "Có") continue; const v = qGet(r, A, f[0], l2); if (!v[0] && f[6] === "miss") out.push(["err", f[2]]); else if (!v[0] && f[6] === "opt" && f[1] !== 8) out.push(["warn", f[2]]); else if (f[5] === "b" && v[0] && !v[1] && f[6]) out.push(["warn", `${f[2]}: chưa có bản ${L2N[l2]}`]); }
+  { const dg = String(qGet(r, A, "maDG", l2)[0] || "").trim(); if (dg && !/^VN-[A-Z]{2,8}-\d{2,6}$/i.test(dg)) out.push(["warn", `Mã cơ sở đóng gói “${dg}” chưa đúng dạng mã đã cấp (VD: VN-DLPH-079). Kiểm tra lại trên quyết định cấp mã.`]); }
   Q_PH.forEach(([g, , vn], i) => { if (!photosOf(r, g).length) out.push(["warn", `Phụ lục 1, nhóm ${i + 1} (${vn}): chưa có ảnh`]); });
   if (!r.nkLink) out.push(["warn", "Phụ lục 1: chưa có link nhật ký điện tử, mục 7 (link và mã QR) sẽ không in trong phiếu"]);
   return out;
@@ -2485,7 +2493,7 @@ function renderXuat() {
     blockers = calcBlk(); btnOff.disabled = blockers.length > 0; btnOff.title = blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "";
     btnZip.className = blockers.length ? "btn" : "btn sm"; btnZip.textContent = blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)";
     blkBox.replaceChildren(blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", { style: "margin:3px 0" }, t, fixBtn(t))), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
-      h("div", { style: "margin-top:4px" }, "Bấm nút cạnh từng mục để đến chỗ sửa. Bổ sung đủ thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."));
+      h("div", { style: "margin-top:4px" }, "Bấm nút cạnh từng mục để đến chỗ sửa. Bổ sung đủ thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."), (() => { const w = X.withQ !== false && qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").find(x => /chưa đúng dạng mã/.test(x[1])); return w ? h("div", { class: "msg warn" }, w[1], fixBtn("Phiếu khảo sát (06): thiếu " + QF.find(f => f[0] === "maDG")[2])) : null; })());
   };  drawBlk();
 
   const one = (i, t) => h("button", { class: "btn sm", onclick: () => doExport(i) }, t);
