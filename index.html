@@ -1267,19 +1267,19 @@ function buildDocs(r, cfg, plan, from, to) {
     const ch = [...cover(ctx, "NHẬT KÝ THEO DÕI SÂU BỆNH DỊCH HẠI", "病虫害监测记录",
       ["Ghi nhận sinh vật gây hại phát hiện trong quá trình canh tác, mức độ, biện pháp xử lý và kết quả theo dõi; số liệu lấy từ nhật ký canh tác.", "记录种植过程中发现的有害生物、危害程度、防治措施及监测结果；数据来源于农事操作记录。"]),
       ...generalInfo(ctx), para("II. NHẬT KÝ THEO DÕI SÂU BỆNH THEO LÔ / 各地块病虫害监测记录", { s: 12, b: true, c: GREEN, before: 8 })];
-    const H = [["STT", "序号"], ["Ngày phát hiện", "发现日期"], ["Lô phát hiện (GPS)", "发现地块(坐标)"], ["Tên sâu bệnh", "病虫害名称"], ["Tên khoa học", "学名"], ["Vị trí gây hại", "危害部位"],
+    const H = [["STT", "序号"], ["Ngày phát hiện", "发现日期"], ["Tên sâu bệnh", "病虫害名称"], ["Tên khoa học", "学名"], ["Vị trí gây hại", "危害部位"],
       ["Mức gây hại", "危害程度"], ["Thời tiết", "天气"], ["Giải pháp kiểm soát", "防控措施"], ["Thuốc sử dụng", "使用药剂"], ["Kết quả theo dõi", "监测结果"], ["Người thực hiện", "执行人"]];
-    const W = [0.8, 1.7, 2.8, 2.7, 2.4, 1.9, 1.4, 1.3, 4.4, 2.1, 1.8, 1.8];
+    const W = [0.8, 1.8, 3.2, 2.8, 2.2, 1.5, 1.4, 4.8, 2.5, 2.0, 2.1];
     lots.forEach((l, i) => {
       ch.push(...lotHeader(i + 1, l, false));
       const rs = byLot(l.k).flatMap(e => e.pests.map(x => ({ e, x })));
       if (!rs.length) { ch.push(para("Không phát hiện sinh vật gây hại trong khoảng thời gian này / 本期间未发现有害生物", { s: 10, i: true })); return; }
       ch.push(tbl(H, rs.map(({ e, x }, k) => {
         const v = x.v, p = x.p, w = x.weather || "";
-        return [String(k + 1), fmt(e.d), [l.ma, l.toaDo || ""], [v.vn, v.cn], v.sci || "–", bi(v.viTri, v.viTriCn), bi(x.muc, MUC_M[x.muc]?.[1]), w ? bi(w, WEATHER_M[w]) : "–",
+        return [String(k + 1), fmt(e.d), [v.vn, v.cn], v.sci || "–", bi(v.viTri, v.viTriCn), bi(x.muc, MUC_M[x.muc]?.[1]), w ? bi(w, WEATHER_M[w]) : "–",
           x.meas ? bi(x.meas[0], x.meas[1]) : "–", p ? [p.ten, `(${p.hoatChat})`] : "Không dùng thuốc / 未用药",
           p ? "Đã kiểm soát / 已控制" : "Theo dõi tiếp / 继续监测", e.person];
-      }), W, 7.5, [0, 1, 6, 7]));
+      }), W, 7.5, [0, 1, 5, 6]));
     });
     ch.push(...signatures(ctx));
     files.push([`02_Nhat_ky_sau_benh_dich_hai_${tag}.docx`, makeDoc(ctx, true, ch)]);
