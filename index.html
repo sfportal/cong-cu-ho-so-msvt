@@ -1835,8 +1835,8 @@ function buildQ(r, cfg, plan, from, to) {
       for (const [lab, val] of [["种植场名称 / Tên vùng trồng", V("ten")[0]], ["代表人 / Người đại diện", r.info.daiDien || ""], ["地址 / Địa chỉ", V("diaChi")[0]],
         ["总面积 / Tổng diện tích", V("tongDT")[0]], ["参与农户数 / Tổng số hộ tham gia", String(new Set(plan.lots.map(l => hoKey(l.chu))).size)], ["采收与出口时间 / Thời gian thu hoạch, xuất khẩu", V("thoiGian")[0]]])
         ch.push(new D.Paragraph({ spacing: { after: 20 }, children: [run(lab + ": ", { b: true, s: 20 }), run(val || "……………", { s: 20 })] }));
-      ch.push(tbl([["序号", "STT"], ["地块编号", "Mã lô"], ["农户", "Chủ hộ"], ["面积（公顷）", "Diện tích (ha)"], ["株数", "Số cây"], ["GPS坐标", "Tọa độ GPS"]],
-        plan.lots.map((l, j) => [String(j + 1), l.ma, l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 2.6, 4.4, 2.2, 1.8, 5.4], 8.5, [0, 3, 4]), para("", { after: 4 }));
+      ch.push(tbl([["序号", "STT"], ["农户", "Chủ hộ"], ["面积（公顷）", "Diện tích (ha)"], ["株数", "Số cây"], ["GPS坐标", "Tọa độ GPS"]],
+        plan.lots.map((l, j) => [String(j + 1), l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 6.0, 2.4, 2.0, 6.0], 8.5, [0, 2, 3]), para("", { after: 4 }));
     } else ch.push(...desc(Q_PH_DESC[G[0]]));
     ch.push(...photoBlock(n, G[0], G[4], G[5]));
   });
