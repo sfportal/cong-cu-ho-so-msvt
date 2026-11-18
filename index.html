@@ -1859,17 +1859,19 @@ function buildQ(r, cfg, plan, from, to) {
     } else ch.push(...desc(Q_PH_DESC[G[0]]));
     ch.push(...photoBlock(n, G[0], G[4], G[5]));
   });
-  // 7. e-logbook: link and QR code
+  // 7. e-logbook: link and QR code (section left out when there is no link)
+  if (r.nkLink) {
   ch.push(para(`${Q_PH.length + 1}. ${tri("电子农事日志（链接及二维码）", "Nhật ký điện tử (đường link và mã QR)", "Electronic farm logbook (link and QR code)")}`, { s: 10.5, b: true, before: 10, after: 4, keep: true }));
   ch.push(para("Nhật ký canh tác, giám sát sinh vật gây hại, sử dụng phân bón và thuốc BVTV của vùng trồng được ghi chép điện tử theo từng lô; quét mã QR hoặc truy cập đường link để xem.", { s: 10, al: "j", after: 2, keep: true }));
   ch.push(para(EN ? "Farming, pest monitoring, fertilizer and pesticide records of the plantation are kept electronically for each lot; scan the QR code or open the link to view them." : "种植场各地块的农事、有害生物监测、肥料及农药使用情况均有电子记录；扫描二维码或打开链接即可查看。", { s: 9.5, i: EN, al: "j", c: "404040", after: 4, keep: true }));
-  if (r.nkLink) {
+  {
     const QW = cmT(4.6);
     ch.push(new D.Table({ columnWidths: [QW, W - QW], layout: D.TableLayoutType.FIXED, width: { size: W, type: D.WidthType.DXA }, borders: D.TableBorders.NONE, rows: [new D.TableRow({ cantSplit: true, children: [
       cell([PHOTO_BUF.__qr ? new D.Paragraph({ alignment: D.AlignmentType.CENTER, children: [new D.ImageRun({ data: PHOTO_BUF.__qr, transformation: { width: PX(4), height: PX(4) } })] }) : para("[QR]", { al: "c", c: "C00000" })], QW, { nob: true, va: D.VerticalAlign.CENTER }),
       cell([para("电子日志链接 / Link nhật ký điện tử:", { s: 10, b: true, after: 2 }), new D.Paragraph({ spacing: { after: 40 }, children: [new D.ExternalHyperlink({ link: r.nkLink, children: [new D.TextRun({ text: r.nkLink, style: "Hyperlink", color: "1F6FB2", underline: {}, size: 19, font: TNR })] })] }),
         para(`Hình ${Q_PH.length + 1}.1 / 图${Q_PH.length + 1}.1: Mã QR nhật ký điện tử / 电子日志二维码`, { s: 9, i: true, after: 0 })], W - QW, { nob: true, va: D.VerticalAlign.CENTER })] })] }));
-  } else ch.push(para("[Chưa có link nhật ký điện tử – nhập link trong công cụ để tạo mã QR] / [请填写电子日志链接]", { s: 10, i: true, al: "c", c: "C00000", before: 40, after: 40 }));
+  }
+  }
   // appendix 2: satellite images of every lot with its boundary
   ch.push(new D.Paragraph({ pageBreakBefore: true, alignment: D.AlignmentType.CENTER, spacing: { after: 60 }, children: [run(EN ? "附件2：各地块卫星图（标出地块边界）/ APPENDIX 2: SATELLITE IMAGES OF LOTS WITH BOUNDARIES / PHỤ LỤC 2: ẢNH VỆ TINH CÁC LÔ TRỒNG CÓ RANH GIỚI LÔ" : "附件2：各地块卫星图（标出地块边界）/ PHỤ LỤC 2: ẢNH VỆ TINH CÁC LÔ TRỒNG CÓ RANH GIỚI LÔ", { s: 13, b: true, c: GREEN })] }));
   ch.push(para(`${V("ten")[0]} – ${plan.lots.length} lô / ${plan.lots.length} 个地块 – ${V("tongDT")[0]}`, { s: 10, al: "c", after: 80 }));
@@ -1894,7 +1896,7 @@ function qIssues(r, A, l2 = "cn") {
   const out = [];
   for (const f of QF) { if (f[0] === "cdPhanGhiChu" && qGet(r, A, "cdPhan", l2)[0] !== "Có") continue; const v = qGet(r, A, f[0], l2); if (!v[0] && f[6] === "miss") out.push(["err", f[2]]); else if (!v[0] && f[6] === "opt" && f[1] !== 8) out.push(["warn", f[2]]); else if (f[5] === "b" && v[0] && !v[1] && f[6]) out.push(["warn", `${f[2]}: chưa có bản ${L2N[l2]}`]); }
   Q_PH.forEach(([g, , vn], i) => { if (!photosOf(r, g).length) out.push(["warn", `Phụ lục 1, nhóm ${i + 1} (${vn}): chưa có ảnh`]); });
-  if (!r.nkLink) out.push(["warn", "Phụ lục 1: chưa có link nhật ký điện tử (để tạo mã QR)"]);
+  if (!r.nkLink) out.push(["warn", "Phụ lục 1: chưa có link nhật ký điện tử, mục 7 (link và mã QR) sẽ không in trong phiếu"]);
   return out;
 }
 const Q_PHOTOS = ["Ảnh vệ tinh các vườn (có ranh giới lô)", "Ảnh flycam toàn vùng", "Ảnh kho: khu thuốc BVTV, khu phân bón, sổ nhập xuất kho, thùng chứa bao bì", "Ảnh thu hoạch: kiểm tra trái, sọt lót bạt, điểm tập kết, xe vận chuyển", "Ảnh bẫy pheromone, bẫy dính tại vườn; sổ nhật ký canh tác, ra vào vườn", "Ảnh tập huấn, bảng thông báo sinh vật gây hại, chứng chỉ đào tạo"];
