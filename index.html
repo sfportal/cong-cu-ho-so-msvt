@@ -117,6 +117,8 @@ function h(tag, attrs, ...kids) {
 const uid = () => Math.random().toString(36).slice(2, 9);
 const clone = o => JSON.parse(JSON.stringify(o));
 const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().replace(/\s+/g, " ").trim();
+// household key: keeps Vietnamese tone marks (Nhương ≠ Nhượng), ignores case and spacing
+const hoKey = s => String(s ?? "").normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
 const slug = s => norm(s).replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 80) || "x";
 const num = v => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isFinite(n) ? n : 0; };
 function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("on"), 3200); }
@@ -469,7 +471,7 @@ function importRegion(data) {
     if (old.qPhotos) {
       data.qPhotos = {};
       for (const [k, v] of Object.entries(old.qPhotos)) if (!k.startsWith("lot_")) data.qPhotos[k] = v;
-      for (const ol of old.lots || []) { const v = old.qPhotos[lotKey(ol)]; if (!v || !v.length) continue; const nl = data.lots.find(l => norm(l.ma) === norm(ol.ma) && norm(l.chu) === norm(ol.chu)); if (nl) data.qPhotos[lotKey(nl)] = v; }
+      for (const ol of old.lots || []) { const v = old.qPhotos[lotKey(ol)]; if (!v || !v.length) continue; const nl = data.lots.find(l => norm(l.ma) === norm(ol.ma) && hoKey(l.chu) === hoKey(ol.chu)) || data.lots.find(l => norm(l.ma) === norm(ol.ma) && norm(l.chu) === norm(ol.chu)); if (nl) data.qPhotos[lotKey(nl)] = v; }
     }
   }
   data.id = id;
@@ -679,7 +681,7 @@ async function importGalleryZip(file, r) {
   }
   // counts against the region
   const rows = [];
-  const nHo = new Set(r.lots.map(l => l.cccd || norm(l.chu))).size, nFarm = r.farmers.length;
+  const nHo = new Set(r.lots.map(l => hoKey(l.chu))).size, nFarm = r.farmers.length;
   if (hhFolders.size) rows.push([hhFolders.size === nFarm ? "ok" : "warn", `Số hộ: thư viện ảnh có ${hhFolders.size} thư mục nông hộ, vùng trồng trong công cụ có ${nFarm} hộ.`]);
   if (lotFolders.size) rows.push([lotFolders.size === r.lots.length ? "ok" : "warn", `Số lô: thư viện ảnh có ${lotFolders.size} thư mục lô, vùng trồng trong công cụ có ${r.lots.length} lô.`]);
   if (noLot.size) rows.push(["err", `${noLot.size} thư mục lô không khớp lô nào (tên chủ hộ + mã lô): ${[...noLot].slice(0, 6).join("; ")}${noLot.size > 6 ? "…" : ""}`]);
@@ -743,7 +745,7 @@ const REGION_FIELDS = [
 const FARMER_REQ = [["gioiTinh", "giới tính"], ["ngaySinh", "ngày sinh"], ["cccd", "số CCCD"], ["ngayCap", "ngày cấp CCCD"], ["noiCap", "nơi cấp CCCD"], ["danToc", "dân tộc"], ["diaChi", "địa chỉ"]];
 const farmerMissing = (f, k) => k === "gioiTinh" ? !["Nam", "Nữ"].includes(f.gioiTinh) : !String(f[k] || "").trim();
 const gpsOk = s => /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(String(s || ""));
-function lotOwner(r, l) { return r.farmers.find(f => f.sdt && f.sdt === l.sdt) || r.farmers.find(f => norm(f.ten) === norm(l.chu)); }
+function lotOwner(r, l) { return r.farmers.find(f => f.sdt && f.sdt === l.sdt) || r.farmers.find(f => hoKey(f.ten) === hoKey(l.chu)) || r.farmers.find(f => norm(f.ten) === norm(l.chu)); }
 function regionIssues(r) {
   const out = [];
   for (const [k, lab, req] of REGION_FIELDS) if (req === "miss" && !String(r.info[k] || "").trim()) out.push(["err", `Vùng trồng: thiếu ${lab} (bắt buộc, có in trong hồ sơ).`]);
@@ -865,7 +867,7 @@ const vnNum = v => String(Math.round(v * 100) / 100).replace(".", ",");
 // the product a household actually bought replaces the process product (trade name, active ingredient, PHI, concentration)
 function prodFor(r, lot, P, id) {
   const base = P[id]; if (!base) return null;
-  const o = r.subs && r.subs[norm(lot.chu)] && r.subs[norm(lot.chu)][id];
+  const sb = r.subs && (r.subs[hoKey(lot.chu)] || r.subs[norm(lot.chu)]); const o = sb && sb[id];
   if (!o || !String(o.ten || "").trim()) return base;
   const m = { ...base, sub: true };
   for (const k of ["ten", "hoatChat", "phi", "nd", "ndDv", "perTree", "donVi"]) if (o[k] !== "" && o[k] != null) m[k] = o[k];
@@ -901,7 +903,7 @@ function buildPlan(r, cfg, year, span) {
   const edits = S.edits[`${r.id}__${year}`] || {};
   const lotEd = edits["#lots"] || {};
   const lots = planLots(r);
-  const owners = [...new Set(lots.map(l => norm(l.chu)))];
+  const owners = [...new Set(lots.map(l => hoKey(l.chu)))];
   const events = [];
   const lech = Math.max(0, Math.round(num(cfg.lechNgay)));
   const canBo = String(cfg.canBo || "").trim();
@@ -913,7 +915,7 @@ function buildPlan(r, cfg, year, span) {
     const SM = Object.fromEntries(lot.Ls.map(s => [s.id, s]));
     const lEnd = lot.Ls[lot.Ls.length - 1].end; sEnd = Math.max(sEnd, lEnd); lot.end = lEnd;
     lot.age = ageOf(lot, sStart); lot.f = ageFactor(lot.age);
-    const shift = own ? 0 : lech ? owners.indexOf(norm(lot.chu)) % (lech + 1) : 0;
+    const shift = own ? 0 : lech ? owners.indexOf(hoKey(lot.chu)) % (lech + 1) : 0;
     const add = e => { const ev = { lot: lot.k, L: lot, person: lot.chu, ...e }; ev.d0 = ev.d; events.push(ev); return ev; };
     for (const t of cfg.tasks) {
       const s = SM[t.stage]; if (!s) continue;
@@ -1222,7 +1224,7 @@ function buildDocs(r, cfg, plan, from, to) {
   const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd);
   const lots = plan.lots;
   const area = Math.round(lots.reduce((a, l) => a + num(l.dienTich), 0) * 100) / 100;
-  const nHo = new Set(lots.map(l => norm(l.chu))).size;
+  const nHo = new Set(lots.map(l => hoKey(l.chu))).size;
   const crop = `${r.info.cayTrong || "Sầu riêng"} ${r.info.giong || ""} / ${CROP_CN[norm(r.info.cayTrong || "Sầu riêng")] || ""} ${r.info.giong || ""}`.replace(/\s+/g, " ").trim();
   const ctx = {
     org: r.info.donVi || r.info.ten || "Vùng trồng", vung: r.info.ten || "", header: r.info.ten || "", year: plan.year, from: Math.max(from, plan.sStart), to: Math.min(to, plan.sEnd),
@@ -1535,7 +1537,7 @@ const taskEn = t => t.en || (TASK_EN.find(([re]) => re.test(norm(t.vn))) || [, "
 function qAuto(r, cfg, plan, from, to) {
   const lots = plan.lots, A = {};
   const area = Math.round(lots.reduce((a, l) => a + num(l.dienTich), 0) * 100) / 100, trees = lots.reduce((a, l) => a + num(l.soCay), 0);
-  const nHo = new Set(lots.map(l => norm(l.chu))).size;
+  const nHo = new Set(lots.map(l => hoKey(l.chu))).size;
   const ev = plan.active.filter(e => e.d >= from && e.d <= to);
   const same = v => [v, v, v];
   A.maDK = r.info.ma || "";
@@ -1831,7 +1833,7 @@ function buildQ(r, cfg, plan, from, to) {
     const n = i + 1; ch.push(ap(n, G));
     if (G[0] === "sat") {
       for (const [lab, val] of [["种植场名称 / Tên vùng trồng", V("ten")[0]], ["代表人 / Người đại diện", r.info.daiDien || ""], ["地址 / Địa chỉ", V("diaChi")[0]],
-        ["总面积 / Tổng diện tích", V("tongDT")[0]], ["参与农户数 / Tổng số hộ tham gia", String(new Set(plan.lots.map(l => norm(l.chu))).size)], ["采收与出口时间 / Thời gian thu hoạch, xuất khẩu", V("thoiGian")[0]]])
+        ["总面积 / Tổng diện tích", V("tongDT")[0]], ["参与农户数 / Tổng số hộ tham gia", String(new Set(plan.lots.map(l => hoKey(l.chu))).size)], ["采收与出口时间 / Thời gian thu hoạch, xuất khẩu", V("thoiGian")[0]]])
         ch.push(new D.Paragraph({ spacing: { after: 20 }, children: [run(lab + ": ", { b: true, s: 20 }), run(val || "……………", { s: 20 })] }));
       ch.push(tbl([["序号", "STT"], ["地块编号", "Mã lô"], ["农户", "Chủ hộ"], ["面积（公顷）", "Diện tích (ha)"], ["株数", "Số cây"], ["GPS坐标", "Tọa độ GPS"]],
         plan.lots.map((l, j) => [String(j + 1), l.ma, l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 2.6, 4.4, 2.2, 1.8, 5.4], 8.5, [0, 3, 4]), para("", { after: 4 }));
@@ -2304,11 +2306,11 @@ function buildFarmbase(r, cfg, plan, from, to, base, mode) {
   const rep = { skipMon: 0, skipFuture: 0, skipDup: 0, newRows: 0, prodNew: new Map(), lotMiss: new Set(), farmerMiss: new Set(), stages: new Set(), end, start };
   const bLots = base ? base.lots : [];
   const byLot = new Map(bLots.map(l => [norm(l.ma), l]));
-  const byName = new Map(bLots.filter(l => l.ten).map(l => [norm(l.ten), l]));
+  const byName = new Map(bLots.filter(l => l.ten).map(l => [norm(l.ten), l])), byHo = new Map(bLots.filter(l => l.ten).map(l => [hoKey(l.ten), l]));
   const bProd = new Map((base ? base.prods : []).map(p => [norm(p[1]), p]));
   const who = lot => {
     const own = lotOwner(r, lot) || {};
-    const b = byLot.get(norm(lot.ma)) || byName.get(norm(lot.chu)) || byName.get(norm(own.ten));
+    const b = byLot.get(norm(lot.ma)) || byHo.get(hoKey(lot.chu)) || byHo.get(hoKey(own.ten)) || byName.get(norm(lot.chu)) || byName.get(norm(own.ten));
     if (base && !byLot.get(norm(lot.ma))) rep.lotMiss.add(lot.ma);
     if (base && !b) rep.farmerMiss.add(lot.chu);
     return { ten: b ? b.ten : (lot.chu || own.ten || ""), sdt: String((b && b.sdt) || lot.sdt || own.sdt || "").replace(/\D/g, "").replace(/^84/, "0"), lo: !base || byLot.get(norm(lot.ma)) ? lot.ma : "" };
@@ -2539,14 +2541,14 @@ function renderXuat() {
     h("div", { class: "tw" }, h("table", { class: "t" }, h("thead", {}, h("tr", {}, ["Mã lô", "Chủ lô", "Số cây", "Tuổi cây (hệ số)", "Ngày hoa nở", "Ngày thu hoạch xong", "Lịch của lô"].map(t => h("th", {}, t)))), calTb))));
 
   // ---- products each household actually bought
-  const owners = [...new Map(plan.lots.map(l => [norm(l.chu), l.chu])).entries()];
+  const owners = [...new Map(plan.lots.map(l => [hoKey(l.chu), l.chu])).entries()];
   if (!owners.find(([k]) => k === X.ho)) X.ho = owners[0]?.[0] || "";
   const hoSel = h("select", {}, owners.map(([k, n]) => h("option", { value: k }, n))); hoSel.value = X.ho;
   hoSel.addEventListener("change", () => { X.ho = hoSel.value; drawSubs(); });
   const usedIds = new Set([...cfg.tasks.map(t => t.prod), ...cfg.pests.map(p => p.prod), ...cfg.occ.map(o => o.prod)].filter(Boolean));
   const subsBox = h("div");
   function drawSubs() {
-    r.subs = r.subs || {}; const mine = () => (r.subs[X.ho] = r.subs[X.ho] || {});
+    r.subs = r.subs || {}; { const nk = norm(X.ho); if (!r.subs[X.ho] && r.subs[nk] && plan.lots.filter(l => norm(l.chu) === nk).every(l => hoKey(l.chu) === X.ho)) { r.subs[X.ho] = r.subs[nk]; delete r.subs[nk]; } } const mine = () => (r.subs[X.ho] = r.subs[X.ho] || {});
     const rows = cfg.products.filter(p => usedIds.has(p.id)).map(p => {
       const o = (r.subs[X.ho] || {})[p.id] || {};
       const inp = (k, ph, w, type = "text") => { const i = h("input", { type, value: o[k] ?? "", placeholder: ph ?? "" }); i.style.minWidth = w + "px";
