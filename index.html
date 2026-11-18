@@ -133,6 +133,17 @@ function fromIso(s) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ""); retur
 function fromDMY(s) { const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(s || "").trim()); return m ? dn(+m[3], +m[2], +m[1]) : null; }
 function yearOf(n) { return new Date(n * DAY).getUTCFullYear(); }
 const monthOf = n => new Date(n * DAY).getUTCMonth() + 1;
+// purpose of a scheduled (preventive) spray: name the pests it prevents in that month, without claiming any was found
+const INSECT_RE = /^(rệp|rầy|sâu|mọt|nhện|bọ|ruồi|côn trùng)/i;
+function preventPurpose(cfg, P, p, t, d) {
+  if (!isPesticide(p) || !["sau", "benh"].includes(p.loai)) return [t.vn, t.cn];
+  const m = monthOf(d), insect = p.loai === "sau";
+  const cand = cfg.pests.filter(v => !v.trap && inMonths(v.thang, m) && INSECT_RE.test(v.vn) === insect);
+  const tg = [...cand.filter(v => v.prod && (v.prod === p.id || v.prod === t.prod)), ...cand.filter(v => !(v.prod && (v.prod === p.id || v.prod === t.prod)))].slice(0, 3);
+  if (!tg.length) return [t.vn, t.cn];
+  const short = s => String(s).replace(/\s*[（(].*[)）]\s*$/, "");
+  return [`${t.vn} – phòng ngừa ${tg.map(v => short(v.vn)).join(", ")} theo quy trình`, `${t.cn} – 按规程预防${tg.map(v => short(v.cn)).join("、")}`];
+}
 function inMonths(spec, m) {
   const t = String(spec || "").trim(); if (!t) return true;
   return t.split(/[,;]+/).some(part => { const x = part.split("-").map(v => parseInt(v, 10)); if (x.length === 1) return x[0] === m; const [a, b] = x; return a <= b ? m >= a && m <= b : (m >= a || m <= b); });
@@ -966,7 +977,7 @@ function buildPlan(r, cfg, year, span) {
     if (e.kind === "task") {
       const t = e.task, p = prodFor(r, e.L, P, t.prod);
       e.vn = t.vn; e.cn = t.cn;
-      if (p) e.prods.push({ p, ...useOf(cfg, p, e.L, t.dose), purpose: [t.vn, t.cn] });
+      if (p) e.prods.push({ p, ...useOf(cfg, p, e.L, t.dose), purpose: preventPurpose(cfg, P, p, t, e.d) });
       e.nk = t.kind === "thu" ? "thu" : p ? (isPesticide(p) || p.loai === "phanla" ? "phun" : "bon") : t.kind || "cham";
     } else if (e.kind === "mon" || (e.kind === "pest" && !e.into)) {
       const occs = e.kind === "mon" ? e.occs : [e];
