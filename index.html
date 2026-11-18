@@ -1493,9 +1493,9 @@ const Q_DEFAULT = {
   kiemTraTruocThu: ["Trước thu hoạch 1–2 tháng, cơ quan kiểm dịch thực vật kiểm tra thực địa về tình hình sinh vật gây hại, việc ghi chép nhật ký canh tác, sử dụng thuốc BVTV và vệ sinh đồng ruộng; hướng dẫn nông hộ tuân thủ thời gian cách ly trước thu hoạch.",
     "采收前1–2个月，植物检疫部门实地检查有害生物情况、农事记录、农药使用及田间卫生，并指导农户遵守采前安全间隔期。",
     "1–2 months before harvest, plant quarantine officials inspect pest status, farming records, pesticide use and field sanitation, and advise farmers to observe pre-harvest intervals."],
-  bienPhapTQ: ["Áp dụng quản lý dịch hại tổng hợp (IPM); treo bẫy pheromone giám sát ruồi đục quả; kiểm tra định kỳ rệp sáp bằng điều tra 5 điểm; xử lý kiến cộng sinh; phun thuốc theo nguyên tắc 4 đúng và đảm bảo thời gian cách ly; không thu hoạch trái nhiễm sinh vật gây hại.",
-    "实施有害生物综合治理（IPM）；悬挂性诱捕器监测果实蝇；采用五点取样定期检查粉蚧；防治共生蚂蚁；按“四正确”原则施药并遵守安全间隔期；受害果实不予采收。",
-    "Implement IPM; deploy pheromone traps for fruit fly monitoring; inspect mealybugs regularly by 5-point sampling; control symbiotic ants; spray under the \"4 Right Principles\" and observe pre-harvest intervals; infested fruit is not harvested."],
+  bienPhapTQ: ["Giám sát sinh vật gây hại theo ISPM 6; treo bẫy pheromone giám sát ruồi đục quả; kiểm tra định kỳ rệp sáp bằng điều tra 5 điểm; xử lý kiến cộng sinh; phun thuốc theo nguyên tắc 4 đúng và đảm bảo thời gian cách ly; không thu hoạch trái nhiễm sinh vật gây hại.",
+    "按ISPM 6开展有害生物监测；悬挂性诱捕器监测果实蝇；采用五点取样定期检查粉蚧；防治共生蚂蚁；按“四正确”原则施药并遵守安全间隔期；受害果实不予采收。",
+    "Conduct pest surveillance under ISPM 6; deploy pheromone traps for fruit fly monitoring; inspect mealybugs regularly by 5-point sampling; control symbiotic ants; spray under the \"4 Right Principles\" and observe pre-harvest intervals; infested fruit is not harvested."],
   khacPhuc: ["Tạm dừng thu hoạch, xuất khẩu tại khu vực bị nhiễm; báo cáo cơ quan kiểm dịch thực vật, khoanh vùng và áp dụng ngay biện pháp xử lý; điều tra nguyên nhân, khắc phục triệt để và chỉ khôi phục sau khi cơ quan kiểm dịch kiểm tra lại đạt yêu cầu.",
     "立即暂停受影响区域的采收和出口；报告植物检疫部门，划定区域并立即采取处理措施；调查原因，彻底整改，经检疫部门复查合格后方可恢复。",
     "Immediately suspend harvest and export in affected areas; report to plant quarantine authorities, delimit the area and apply treatments; investigate root causes, take corrective actions, and resume only after re-inspection and approval."],
@@ -1610,9 +1610,9 @@ function qAuto(r, cfg, plan, from, to) {
       `Data aggregated from farm pesticide logs from ${fmt(a)} to ${fmt(b)}; all applications followed label dosages and pre-harvest intervals.`];
   }
   A.kyThuat = cfg.canBo ? [`Cán bộ kỹ thuật: ${cfg.canBo}`, `技术人员：${cfg.canBo}`, `Technician: ${cfg.canBo}`] : ["", "", ""];
-  A.sanXuat = [`${nHo} hộ, ${lots.length} lô, ${vnNum(area)} ha, ${trees} cây sầu riêng${gs.length ? ` (giống ${gs.join(", ")})` : ""}; áp dụng quy trình ${r.info.tieuChuan || "VietGAP"} và IPM.`,
-    `${nHo}户，${lots.length}个地块，${vnNum(area)}公顷，榴莲${trees}株${gs.length ? `（品种${gs.join("、")}）` : ""}；实施${r.info.tieuChuan || "VietGAP"}及IPM。`,
-    `${nHo} households, ${lots.length} lots, ${String(area)} ha, ${trees} durian trees${gs.length ? ` (${gs.join(", ")})` : ""}; applying ${r.info.tieuChuan || "VietGAP"} and IPM.`];
+  A.sanXuat = [`${nHo} hộ, ${lots.length} lô, ${vnNum(area)} ha, ${trees} cây sầu riêng${gs.length ? ` (giống ${gs.join(", ")})` : ""}; áp dụng quy trình ${r.info.tieuChuan || "VietGAP"} và giám sát sinh vật gây hại theo ISPM 6.`,
+    `${nHo}户，${lots.length}个地块，${vnNum(area)}公顷，榴莲${trees}株${gs.length ? `（品种${gs.join("、")}）` : ""}；实施${r.info.tieuChuan || "VietGAP"}并按ISPM 6开展有害生物监测。`,
+    `${nHo} households, ${lots.length} lots, ${String(area)} ha, ${trees} durian trees${gs.length ? ` (${gs.join(", ")})` : ""}; applying ${r.info.tieuChuan || "VietGAP"} with pest surveillance under ISPM 6.`];
   const sl = lots.reduce((a, l) => a + num(l.slDk), 0), st = lots.reduce((a, l) => a + num(l.slTt), 0);
   const out = st || sl;
   A.sanLuong = out ? [`Sản lượng ${st ? "thực tế" : "dự kiến"} khoảng ${vnNum(out)} tấn/năm; thị trường xuất khẩu: Trung Quốc.`, `${st ? "实际" : "预计"}年产量约${vnNum(out)}吨；出口市场：中国。`, `${st ? "Actual" : "Estimated"} output about ${out} tons/year; export market: China.`] : ["", "", ""];
@@ -1854,8 +1854,8 @@ function buildQ(r, cfg, plan, from, to) {
       for (const [lab, val] of [["种植场名称 / Tên vùng trồng", V("ten")[0]], ["代表人 / Người đại diện", r.info.daiDien || ""], ["地址 / Địa chỉ", V("diaChi")[0]],
         ["总面积 / Tổng diện tích", V("tongDT")[0]], ["参与农户数 / Tổng số hộ tham gia", String(new Set(plan.lots.map(l => hoKey(l.chu))).size)], ["采收与出口时间 / Thời gian thu hoạch, xuất khẩu", V("thoiGian")[0]]])
         ch.push(new D.Paragraph({ spacing: { after: 20 }, children: [run(lab + ": ", { b: true, s: 20 }), run(val || "……………", { s: 20 })] }));
-      ch.push(tbl([["序号", "STT"], ["地块编号", "Mã lô"], ["农户", "Chủ hộ"], ["面积（公顷）", "Diện tích (ha)"], ["株数", "Số cây"], ["GPS坐标", "Tọa độ GPS"]],
-        plan.lots.map((l, j) => [String(j + 1), l.ma, l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 2.6, 4.4, 2.2, 1.8, 5.4], 8.5, [0, 3, 4]), para("", { after: 4 }));
+      ch.push(tbl([["序号", "STT"], ["农户", "Chủ hộ"], ["面积（公顷）", "Diện tích (ha)"], ["株数", "Số cây"], ["GPS坐标", "Tọa độ GPS"]],
+        plan.lots.map((l, j) => [String(j + 1), l.chu, vnNum(num(l.dienTich)), String(l.soCay || "–"), l.toaDo || "–"]), [1.2, 5.8, 2.6, 2.2, 5.8], 8.5, [0, 2, 3]), para("", { after: 4 }));
     } else ch.push(...desc(Q_PH_DESC[G[0]]));
     ch.push(...photoBlock(n, G[0], G[4], G[5]));
   });
