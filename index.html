@@ -2506,7 +2506,7 @@ function renderXuat() {
         SLx.on ? h("div", { class: "msg " + (SLx.over.length ? "warn" : "ok") }, `Nhật ký canh tác: ${SLx.after} dòng (bớt ${SLx.omit.size} trên ${SLx.before}), lô nhiều nhất ${SLx.maxLot} dòng.` + (SLx.over.length ? ` ${SLx.over.length} lô vẫn vượt ${r.maxNk} dòng vì số lần dùng phân thuốc, sâu bệnh, thu hoạch bắt buộc phải ghi (VD ${SLx.over.slice(0, 3).map(x => `${x[0]}: ${x[1]}`).join(", ")}). Muốn ít hơn thì phải giảm số lần bón, phun trong quy trình.` : "")) : null,
         r.maxNk && r.maxNk < nSt ? h("div", { class: "msg warn" }, `Giới hạn ${r.maxNk} dòng nhỏ hơn số giai đoạn (${nSt}); mỗi giai đoạn vẫn được giữ một dòng.`) : null); })(),
     h("h3", {}, "Kiểm tra trước khi xuất"),
-    issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m)) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
+    issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m, fixBtn(m))) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
     nErr ? h("p", { class: "muted" }, `Còn ${nErr} lỗi đỏ: vẫn xuất được để xem thử, nhưng nên sửa trước khi nộp.`) : null,
     isDraft ? h("div", { class: "msg err" }, "Bộ hồ sơ đang là BẢN NHÁP. Sau khi tải, xem lại các nội dung bôi đỏ trong file (lô chưa nhập đủ kết quả kiểm tra, cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát) và sửa trước khi nộp.") : null,
     blkBox,
@@ -2843,7 +2843,7 @@ function realIssues(r, cfg, plan, edits) {
   const usedPest = new Map();
   for (const e of plan.active) for (const x of e.prods) if (isPesticide(x.p)) usedPest.set(x.p.id + "|" + x.p.ten, x.p);
   const generic = [...usedPest.values()].filter(p => /^thuốc chứa/i.test(p.ten)).map(p => p.ten);
-  if (generic.length) out.push(["err", `Tên thuốc chưa phải tên thương phẩm: ${[...new Set(generic)].join(", ")}. Nhập tên trên nhãn hoặc hóa đơn ở mục “Vật tư thực tế của từng hộ” (hoặc sửa trong quy trình).`]);
+  if (generic.length) out.push(["warn", `Tên thuốc chưa phải tên thương phẩm: ${[...new Set(generic)].join(", ")}. Nhập tên trên nhãn hoặc hóa đơn ở mục “Vật tư thực tế của từng hộ” (hoặc sửa trong quy trình).`]);
   const noNd = [...usedPest.values()].filter(p => !(num(p.nd) > 0)).map(p => p.ten);
   if (noNd.length) out.push(["warn", `Chưa có nồng độ pha theo nhãn: ${[...new Set(noNd)].join(", ")}. Hồ sơ đang ghi “theo liều trên nhãn”; VietGAP yêu cầu ghi nồng độ và lượng dùng.`]);
   const noAge = plan.lots.filter(l => l.age == null).length;
