@@ -1084,7 +1084,7 @@ function planIssues(r, cfg, plan, from, to) {
 
 /* ============================================================ docx writer */
 const D = window.docx;
-const TNR = { ascii: "Times New Roman", hAnsi: "Times New Roman", eastAsia: "Times New Roman", cs: "Times New Roman" };
+const TNR = { ascii: "Times New Roman", hAnsi: "Times New Roman", eastAsia: "SimSun", cs: "Times New Roman" };
 const GREEN = "1E5E20";
 const cmT = x => Math.round(x * 567);
 function runs(parts, o = {}) {
@@ -1230,7 +1230,7 @@ function buildDocs(r, cfg, plan, from, to) {
   const crop = `${r.info.cayTrong || "Sầu riêng"} ${r.info.giong || ""} / ${CROP_CN[norm(r.info.cayTrong || "Sầu riêng")] || ""} ${r.info.giong || ""}`.replace(/\s+/g, " ").trim();
   const ctx = {
     org: r.info.donVi || r.info.ten || "Vùng trồng", vung: r.info.ten || "", header: r.info.ten || "", year: plan.year, from: Math.max(from, plan.sStart), to: Math.min(to, plan.sEnd),
-    addr: [r.info.diaChi, r.info.xa, r.info.tinh].filter(Boolean).join(", "), ma: r.info.ma || "………………… (đang đăng ký / 申请中)",
+    addr: joinAddr(r.info.diaChi, r.info.xa, r.info.tinh), ma: r.info.ma || "………………… (đang đăng ký / 申请中)",
     area: String(area).replace(".", ","), nHo, nLo: lots.length, crop, rep: r.info.daiDien || "…………………", std: r.info.tieuChuan,
     tinhShort: (r.info.tinh || "").replace(/^Tỉnh\s+|^Thành phố\s+/i, "") || "………",
   };
@@ -1549,7 +1549,7 @@ function qAuto(r, cfg, plan, from, to) {
   const dd = [r.info.daiDien, r.info.sdtDaiDien].filter(Boolean).join(" – ");
   A.daiDien = dd ? [`${r.info.daiDien || ""}${r.info.sdtDaiDien ? ` – ĐT: ${r.info.sdtDaiDien}` : ""}`, `${r.info.daiDien || ""}${r.info.sdtDaiDien ? ` – 电话：${r.info.sdtDaiDien}` : ""}`, `${r.info.daiDien || ""}${r.info.sdtDaiDien ? ` – Tel: ${r.info.sdtDaiDien}` : ""}`] : ["", "", ""];
   A.tongDT = `${vnNum(area)} ha (${nHo} hộ / ${lots.length} lô)`;
-  A.diaChi = same([r.info.diaChi, r.info.xa, r.info.tinh].filter(Boolean).join(", "));
+  A.diaChi = same(joinAddr(r.info.diaChi, r.info.xa, r.info.tinh));
   A.tinh = [r.info.tinh || "", /đắk lắk|dak lak/i.test(norm(r.info.tinh || "")) || /dak lak/.test(norm(r.info.tinh || "")) ? "多乐省" : r.info.tinh || "", (r.info.tinh || "").replace(/^Tỉnh\s+/i, "") + (r.info.tinh ? " Province" : "")];
   A.toaDo = lotCentroid(lots);
   const gm = new Map(); for (const g of [...lots.map(l => l.giong), r.info.giong].flatMap(x => String(x || "").split(/[,;\/]+/))) { const t = String(g || "").trim(); if (t && !gm.has(norm(t))) gm.set(norm(t), t.charAt(0).toUpperCase() + t.slice(1)); }
@@ -1616,6 +1616,12 @@ function qAuto(r, cfg, plan, from, to) {
   return A;
 }
 // value for one field: [Vietnamese, second language] (second = "en" or "cn")
+// join address parts without repeating a commune/province that is already written (VD "Phường Buôn Hồ, Tỉnh Đắk Lắk" + xa + tinh)
+function joinAddr(...ps) {
+  const k = t => hoKey(t).replace(/^(xã|phường|thị trấn|tỉnh|thành phố|tp\.?)\s+/, ""), seen = new Set(), out = [];
+  for (const p of ps) for (const seg of String(p ?? "").split(",").map(x => x.trim()).filter(Boolean)) { const kk = k(seg); if (!seen.has(kk)) { seen.add(kk); out.push(seg); } }
+  return out.join(", ");
+}
 function qGet(r, A, k, l2 = "cn") {
   const f = QF.find(x => x[0] === k), u = (r.q || {})[k];
   if (f[5] === "b") {
