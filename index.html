@@ -635,7 +635,7 @@ async function importDossierZip(file) {
     const p = res.lotPics[i]; if (!p) continue; const l = r.lots[i];
     const blob = await p.e.async("blob"); const f = new File([blob], p.name, { type: /png$/i.test(p.name) ? "image/png" : "image/jpeg" });
     const k = lotKey(l); if (photosOf(r, k).length) continue;
-    await addPhotos(r, k, [f], true); const ph = photosOf(r, k); if (ph.length) { ph[ph.length - 1].cap = `Ảnh địa chính lô ${l.ma} – ${l.chu}`; n++; }
+    await addPhotos(r, k, [f], true); const ph = photosOf(r, k); if (ph.length) { ph[ph.length - 1].cap = `Ảnh địa chính – ${l.chu}`; n++; }
   }
   persist("regions", id);
   const miss = r.lots.filter(l => !photosOf(r, lotKey(l)).length).length;
@@ -711,7 +711,7 @@ async function importGalleryZip(file, r) {
     const ph = photosOf(r, g); const last = ph[ph.length - 1]; if (last) { last.src = src; if (cap != null) last.cap = cap; } return true;
   };
   for (const [g, a] of Object.entries(grp)) for (const x of a) if (await add(g, x, "")) n1++;
-  for (const [l, x] of lotPic) { const k = lotKey(l); if (photosOf(r, k).length) continue; if (await add(k, x, `Ảnh địa chính lô ${l.ma} – ${l.chu}`)) n2++; }
+  for (const [l, x] of lotPic) { const k = lotKey(l); if (photosOf(r, k).length) continue; if (await add(k, x, `Ảnh địa chính – ${l.chu}`)) n2++; }
   persist("regions", r.id);
   toast(`Đã thêm ${n1} ảnh vào Phụ lục 1 và ${n2} ảnh vệ tinh vào Phụ lục 2.`);
   render();
@@ -1878,10 +1878,10 @@ function buildQ(r, cfg, plan, from, to) {
     const hdr = new D.TableRow({ tableHeader: true, cantSplit: true, children: [cell([para("地块信息 / Thông tin lô", { s: 9.5, b: true, al: "c", after: 0 })], IW, { fill: "DDEBDD" }), cell([para("卫星图（标出地块边界）/ Ảnh vệ tinh có ranh giới lô", { s: 9.5, b: true, al: "c", after: 0 })], PW, { fill: "DDEBDD" })] });
     const rows = plan.lots.map((l, j) => {
       const ps = photosOf(r, lotKey(l));
-      const info = [para(`${j + 1}. 地块 / Lô: ${l.ma || "–"}`, { s: 10, b: true, after: 2 }), para(`农户 / Chủ hộ: ${l.chu || "–"}`, { s: 9.5, after: 2 }), para(`面积 / Diện tích: ${vnNum(num(l.dienTich))} ha`, { s: 9.5, after: 2 }),
-        para(`株数 / Số cây: ${l.soCay || "–"}`, { s: 9.5, after: 2 }), para(`坐标 / Tọa độ: ${l.toaDo || "–"}`, { s: 9, after: 2 }), ...(l.thua || l.to ? [para(`Tờ ${l.to || "–"}, thửa ${l.thua || "–"}`, { s: 9, after: 0 })] : [])];
-      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình 2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""} / 图2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""}: ${p.cap || `Lô ${l.ma}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
-        : [para(`[Chèn ảnh vệ tinh lô ${l.ma} có ranh giới lô]`, { s: 9.5, i: true, al: "c", c: "C00000", before: 22, after: 0 }), para(`[插入地块${l.ma}卫星图]`, { s: 9, i: true, al: "c", c: "C00000", after: 22 })];
+      const info = [para(`${j + 1}. 农户 / Chủ hộ: ${l.chu || "–"}`, { s: 10, b: true, after: 2 }), para(`面积 / Diện tích: ${vnNum(num(l.dienTich))} ha`, { s: 9.5, after: 2 }),
+        para(`株数 / Số cây: ${l.soCay || "–"}`, { s: 9.5, after: 2 }), para(`坐标 / Tọa độ: ${l.toaDo || "–"}`, { s: 9, after: 2 })];
+      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình 2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""} / 图2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""}: ${String(p.cap || "").replace(/ lô .+? – /, " – ") || `Ảnh vệ tinh – ${l.chu}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
+        : [para(`[Chèn ảnh vệ tinh vườn hộ ${l.chu} có ranh giới]`, { s: 9.5, i: true, al: "c", c: "C00000", before: 22, after: 0 }), para(`[插入农户${l.chu}地块卫星图]`, { s: 9, i: true, al: "c", c: "C00000", after: 22 })];
       return new D.TableRow({ cantSplit: true, children: [cell(info, IW, { va: D.VerticalAlign.CENTER }), cell(pics, PW, { va: D.VerticalAlign.CENTER })] });
     });
     ch.push(new D.Table({ columnWidths: [IW, PW], layout: D.TableLayoutType.FIXED, width: { size: W, type: D.WidthType.DXA }, rows: [hdr, ...rows] }));
