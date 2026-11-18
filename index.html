@@ -2439,11 +2439,36 @@ function renderXuat() {
   const isDraft = inR.some(e => e.kind === "mon" && !e.entered && e.d <= todayDn());
   const nFuture = inR.filter(e => e.d > todayDn()).length;
   // official files only when every required (red) item is complete
-  const qErrs = X.withQ !== false ? qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").filter(x => x[0] === "err").map(x => `Phiếu khảo sát (06): thiếu ${x[1]}`) : [];
+  const qErrsNow = () => X.withQ !== false ? qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").filter(x => x[0] === "err").map(x => `Phiếu khảo sát (06): thiếu ${x[1]}`) : [];
   const nMonLeft = inR.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).length;
-  const blockers = [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrs, ...(nFuture ? [`Khoảng ngày đang chọn kéo đến ${fmt(X.to)}, có ${nFuture} việc sau hôm nay. Hồ sơ chính thức chỉ ghi việc đã làm: chọn “Đến ngày” là hôm nay hoặc sớm hơn (nút “Đầu vụ → hôm nay”).`] : [])];
+  const calcBlk = () => [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrsNow(), ...(nFuture ? [`Khoảng ngày đang chọn kéo đến ${fmt(X.to)}, có ${nFuture} việc sau hôm nay. Hồ sơ chính thức chỉ ghi việc đã làm: chọn “Đến ngày” là hôm nay hoặc sớm hơn (nút “Đầu vụ → hôm nay”).`] : [])];
+  let blockers = calcBlk();
+  // jump to the place where a red item is fixed
+  const flash = n => { if (!n) return false; n.scrollIntoView({ behavior: "smooth", block: "center" }); const c = n.closest(".card") || n; c.style.outline = "3px solid #f0b400"; setTimeout(() => c.style.outline = "", 2500); const f = n.matches("input,textarea,select") ? n : n.querySelector("input,textarea,select"); if (f) setTimeout(() => f.focus({ preventScroll: true }), 400); return true; };
+  const goH2 = (tab, title) => { if (UI.tab !== tab) { UI.tab = tab; render(); } setTimeout(() => flash([...document.querySelectorAll("#t-" + tab + " h2")].find(x => x.textContent.startsWith(title))), 50); };
+  const fixBtn = t => {
+    let lab = "Sửa", go = null, m;
+    if ((m = /^Phiếu khảo sát \(06\): thiếu (.+)$/.exec(t))) { const f = QF.find(x => x[2] === m[1]); lab = "Điền ngay"; go = () => flash(document.querySelector(`[data-q="${f ? f[0] : ""}"]`)) || goH2("xuat", "06 Phiếu khảo sát"); }
+    else if (/chưa nhập kết quả/.test(t)) { if (r.monNo) go = () => goH2("xuat", "Kết quả kiểm tra sâu bệnh thực tế"); else { lab = "Kiểm tra định kỳ không phát hiện gì: bật “Mặc định không phát hiện” cho cả vùng"; go = () => { const ck = document.querySelector("#monNoLbl input"); if (ck) { ck.scrollIntoView({ block: "center" }); ck.click(); } }; } }
+    else if (/sau hôm nay/.test(t)) { lab = "Đặt “Đến ngày” là hôm nay"; go = () => { X.to = Math.min(todayDn(), plan.sEnd); renderXuat(); }; }
+    else if (/tên thương phẩm/.test(t)) { lab = "Sửa tên thuốc trong quy trình"; go = () => goH2("quytrinh", "Phân bón, thuốc BVTV"); }
+    else if (/^(Vùng trồng|Nông hộ|Lô )/.test(t)) go = () => goH2("vung", /^Vùng trồng/.test(t) ? "Thông tin vùng trồng" : "Dữ liệu cần bổ sung");
+    else if (/^Công việc “/.test(t)) go = () => goH2("quytrinh", "Công việc canh tác");
+    else if (/chưa chọn thuốc/.test(t)) go = () => goH2("quytrinh", "Diễn biến sinh vật gây hại");
+    else if (/quá gần ngày thu hoạch/.test(t)) go = () => goH2("xuat", "Ngày ra hoa, thu hoạch của từng lô");
+    else if (/Phiếu khảo sát|Phụ lục/.test(t)) go = () => goH2("xuat", "06 Phiếu khảo sát");
+    return go ? h("button", { class: "btn sm" + (/Mặc định/.test(lab) ? " pri" : ""), style: "margin-left:8px", onclick: go }, lab + " →") : null;
+  };
   const btnZip = h("button", { class: blockers.length ? "btn" : "btn sm", onclick: () => doExport(null) }, blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)");
-  const btnOff = h("button", { class: "btn pri", disabled: blockers.length > 0, title: blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "", onclick: () => { if (!blockers.length) doExport(null, true); } }, "Tải tệp chính thức (.zip)");
+  const btnOff = h("button", { class: "btn pri", onclick: () => { if (!blockers.length) doExport(null, true); } }, "Tải tệp chính thức (.zip)");
+  const blkBox = h("div");
+  const drawBlk = () => {
+    blockers = calcBlk(); btnOff.disabled = blockers.length > 0; btnOff.title = blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "";
+    btnZip.className = blockers.length ? "btn" : "btn sm"; btnZip.textContent = blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)";
+    blkBox.replaceChildren(blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", { style: "margin:3px 0" }, t, fixBtn(t))), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
+      h("div", { style: "margin-top:4px" }, "Bấm nút cạnh từng mục để đến chỗ sửa. Bổ sung đủ thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."));
+  };  drawBlk();
+
   const one = (i, t) => h("button", { class: "btn sm", onclick: () => doExport(i) }, t);
   async function doExport(which, official) {
     const withQ = which === 5 || (which == null && X.withQ !== false);
@@ -2484,8 +2509,7 @@ function renderXuat() {
     issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m)) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
     nErr ? h("p", { class: "muted" }, `Còn ${nErr} lỗi đỏ: vẫn xuất được để xem thử, nhưng nên sửa trước khi nộp.`) : null,
     isDraft ? h("div", { class: "msg err" }, "Bộ hồ sơ đang là BẢN NHÁP. Sau khi tải, xem lại các nội dung bôi đỏ trong file (lô chưa nhập đủ kết quả kiểm tra, cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát) và sửa trước khi nộp.") : null,
-    blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", {}, t, /chưa nhập kết quả/.test(t) && !r.monNo ? h("div", { style: "margin-top:4px" }, h("button", { class: "btn sm pri", onclick: () => { const ck = document.querySelector("#monNoLbl input"); if (ck) { ck.scrollIntoView({ block: "center" }); ck.click(); } } }, "Kiểm tra định kỳ không phát hiện gì: bật “Mặc định không phát hiện” cho cả vùng")) : null)), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
-      h("div", { style: "margin-top:4px" }, "Bổ sung đủ các mục trên thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."),
+    blkBox,
     h("div", { class: "row", style: "margin-top:10px" }, btnOff, btnZip, one(0, "01 Canh tác"), one(1, "02 Sâu bệnh"), one(2, "03 Phân thuốc"), one(3, "04 ISPM 6"), one(4, "05 Ra vào"), one(5, "06 Phiếu khảo sát"))));
 
   // ---- FarmBase logbook import file
@@ -2589,7 +2613,7 @@ function renderXuat() {
       const secs = [...new Set(QF.map(f => f[1]))];
       qBox.replaceChildren(...secs.map(s => h("div", {}, h("h3", {}, s ? `${s}. ${QSEC[s][0]} / ${QSEC[s][1].replace(/^\d+\.\s*/, "")}${l2 === "en" ? " / " + QSEC[s][2] : ""}` : "Chung / 通用"), h("div", { class: "grid" }, QF.filter(f => f[1] === s).map(f => {
         const [k, , vn, cn, en, ty] = f; const u = r.q[k];
-        const save = () => { persist("regions", r.id); };
+        const save = () => { persist("regions", r.id); drawBlk(); };
         let ctl;
         if (ty === "yn") {
           ctl = h("select", { class: lvl(f) }, YN.map(([v, t]) => h("option", { value: v }, t))); ctl.value = u != null && u !== "" ? u : (A[k] || "");
@@ -2597,13 +2621,15 @@ function renderXuat() {
         } else if (ty === "s") {
           ctl = h("input", { value: u ?? "", placeholder: A[k] || "", class: lvl(f) });
           ctl.addEventListener("change", () => { r.q[k] = ctl.value.trim(); ctl.className = lvl(f); save(); });
+          ctl.addEventListener("input", () => { r.q[k] = ctl.value.trim(); ctl.className = lvl(f); drawBlk(); });
         } else {
           const a = A[k] || ["", "", ""]; const mk = (lang, ph) => { const t = h("textarea", { rows: 2, placeholder: ph || "", class: lang === "vn" ? lvl(f) : "" }); t.value = (u && u[lang]) || "";
-            t.addEventListener("change", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") t.className = lvl(f); save(); }); return t; };
+            t.addEventListener("change", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") t.className = lvl(f); save(); });
+            t.addEventListener("input", () => { r.q[k] = { ...(r.q[k] || {}), [lang]: t.value.trim() }; if (lang === "vn") { t.className = lvl(f); drawBlk(); } }); return t; };
           ctl = h("div", {}, mk("vn", a[0] ? "Tự điền: " + a[0] : "Tiếng Việt"), mk(l2, a[ai] ? (l2 === "cn" ? "自动: " : "Auto: ") + a[ai] : `${L2N[l2]} (trống = dịch hoặc ghi tay)`));
         }
         const red = Q_RED.includes(k) ? "color:#c00000;" : "";
-        return h("label", { class: "f", style: red + (ty === "b" ? "grid-column:1/-1" : "") }, l2 === "en" ? `${vn} / ${cn} / ${en}` : `${vn} / ${cn}`, ctl);
+        return h("label", { class: "f", "data-q": k, style: red + (ty === "b" ? "grid-column:1/-1" : "") }, l2 === "en" ? `${vn} / ${cn} / ${en}` : `${vn} / ${cn}`, ctl);
       })))));
     };
     drawQ();
