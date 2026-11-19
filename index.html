@@ -264,7 +264,7 @@ function defaultConfig(xa) {
     O("v_tt", "s7", 45, "Thấp", "thucong"),
   ];
   return {
-    v: 3, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
+    v: 4, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
     monitor: { every: 14, start: 7, vn: "Kiểm tra sâu bệnh định kỳ", cn: "定期病虫害检查" },
     survey: { every: 28 },
     spray: { nuoc: 6, binh: 200 },
@@ -371,8 +371,26 @@ function buonHoConfig(xa) {
     { id: "v_nhen", vn: "Nhện đỏ", cn: "红蜘蛛", sci: "Tetranychidae", viTri: "Lá, đọt non", viTriCn: "叶片、嫩梢", bpHoa: "Phun {P}, theo dõi mật độ", bpHoaCn: "喷施{P}，监测密度", bpTc: "Tưới phun mưa rửa tán, theo dõi mật độ", bpTcCn: "喷水冲洗树冠，监测密度", prod: "q_superrex", thang: "1-5", trap: false },
     { id: "v_rayx", vn: "Rầy xanh", cn: "小绿叶蝉", sci: "Cicadellidae", viTri: "Đọt non, lá non", viTriCn: "嫩梢、嫩叶", bpHoa: "Phun {P} khi mật độ cao", bpHoaCn: "密度高时喷施{P}", bpTc: "Theo dõi mật độ, chỉ xử lý khi cần", bpTcCn: "监测密度，必要时处理", prod: "q_yapoko", thang: "1-5", trap: false });
   const O = (pest, stage, offset, muc, xuLy) => ({ id: uid(), pest, stage, offset, muc, xuLy, prod: "", thoiTiet: "", soLuong: "", lots: "" });
-  const occ = [O("v_phy", "b2", 11, "Thấp", "hoa"), O("v_nhen", "b3", 4, "Trung bình", "hoa"), O("v_rayx", "b5", 28, "Thấp", "thucong"), O("v_phy", "b8", 5, "Trung bình", "hoa")];
-  return { ...base, mau: "buonho", xa, seasonStart: "01/11", stages: st, tasks, products: pr, pests, occ };
+  const occ = buonHoOcc(O);
+  return { ...base, mau: "buonho", xa, seasonStart: "01/11", lechNgay: 6, stages: st, tasks, products: pr, pests, occ };
+}
+// diễn biến sâu bệnh mẫu Buôn Hồ: 8–10 lần/lô/vụ theo mùa ở Đắk Lắk; "60%" = chỉ khoảng 60% số lô (chọn cố định theo lô)
+// không có ruồi đục quả, rệp sáp, sâu đục quả trong mẫu: các đối tượng kiểm dịch chỉ ghi khi người dùng nhập kết quả kiểm tra thật
+function buonHoOcc(O) {
+  const L = (o, lots) => ({ ...o, lots });
+  return [
+    L(O("v_heo", "b1", 30, "Thấp", "thucong"), "60%"),
+    O("v_phy", "b2", 11, "Thấp", "hoa"),
+    O("v_ray", "b3", 3, "Thấp", "thucong"),
+    L(O("v_sal", "b3", 10, "Thấp", "thucong"), "50%"),
+    O("v_nhen", "b3", 18, "Trung bình", "hoa"),
+    L(O("v_sab", "b5", 10, "Thấp", "thucong"), "50%"),
+    O("v_rayx", "b5", 12, "Thấp", "thucong"),
+    L(O("v_nhen", "b5", 30, "Thấp", "thucong"), "60%"),
+    O("v_tt", "b7", 40, "Thấp", "thucong"),
+    O("v_phy", "b8", 5, "Trung bình", "hoa"),
+    L(O("v_phy", "b8", 30, "Thấp", "thucong"), "50%"),
+  ];
 }
 const PROC_TEMPLATES = [["buonho", "Quy trình Buôn Hồ (chuẩn)", buonHoConfig], ["daklak", "Quy trình Đắk Lắk", defaultConfig]];
 // new commune: Quy trình Buôn Hồ là mẫu chuẩn cho mọi xã/phường; Quy trình Đắk Lắk vẫn chọn được ở tab Quy trình
@@ -844,8 +862,12 @@ function lotStages(cfg, base, lt) {
   return [...layStages(cfg.stages.slice(0, fi), S0, lf - 1), ...layStages(cfg.stages.slice(fi), lf, le)];
 }
 function stageAt(stages, d) { return stages.find(s => d >= s.start && d <= s.end) || (d < stages[0].start ? stages[0] : stages[stages.length - 1]); }
+// stable pseudo-random 0..1 from a string (same lot + same row -> same value every export)
+function hash01(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10007) / 10007; }
 function lotsOf(occ, r) {
   const t = String(occ.lots || "").trim(); if (!t) return r.lots.map(l => l.ma);
+  const pc = /^(\d{1,3})\s*%$/.exec(t);
+  if (pc) return r.lots.map(l => l.ma).filter(ma => hash01(`${occ.id}|${ma}`) < +pc[1] / 100);
   return t.split(/[,;\s]+/).filter(Boolean);
 }
 function migrateCfg(cfg) {
@@ -878,6 +900,16 @@ function migrateCfg(cfg) {
       }
     }
     cfg.v = 3;
+  }
+  if (!(cfg.v >= 4)) {
+    // v4: Quy trình Buôn Hồ – diễn biến sâu bệnh mẫu 8–10 lần/lô, lệch ngày giữa các hộ 6 ngày (chỉ khi còn đúng mẫu cũ)
+    if (cfg.mau === "buonho") {
+      const sig = o => `${o.pest}|${o.stage}|${o.offset}|${o.muc}|${o.xuLy}|${o.lots || ""}`;
+      const old = ["v_phy|b2|11|Thấp|hoa|", "v_nhen|b3|4|Trung bình|hoa|", "v_rayx|b5|28|Thấp|thucong|", "v_phy|b8|5|Trung bình|hoa|"];
+      if ((cfg.occ || []).map(sig).join(";") === old.join(";")) cfg.occ = buonHoConfig(cfg.xa).occ;
+      if (num(cfg.lechNgay) === 2) cfg.lechNgay = 6;
+    }
+    cfg.v = 4;
   }
   return cfg;
 }
@@ -952,14 +984,17 @@ function buildPlan(r, cfg, year, span) {
     for (const t of cfg.tasks) {
       const s = SM[t.stage]; if (!s) continue;
       let d = s.start + Math.round(num(t.offset)), n = 0; const rep = Math.round(num(t.repeat));
-      while (d <= s.end) { add({ key: `${lot.k}|t|${t.id}|${n}`, kind: "task", task: t, d: d + shift }); n++; if (!(rep > 0)) break; d += rep; }
+      // chăm sóc, bón phân lệch thêm 0–3 ngày theo từng lô để các lô không trùng lịch hoàn toàn (phun và thu hoạch giữ theo quy trình)
+      const jit = lech && ["cham", "bon"].includes(t.kind) && !own ? Math.floor(hash01(`${lot.k}|${t.id}`) * 4) : 0;
+      while (d <= s.end) { add({ key: `${lot.k}|t|${t.id}|${n}`, kind: "task", task: t, d: d + shift + jit }); n++; if (!(rep > 0)) break; d += rep; }
     }
     for (let d = sStart + Math.round(num(cfg.monitor.start)) + shift, n = 0; d <= lEnd; d += me, n++)
       add({ key: `${lot.k}|m|${n}`, kind: "mon", d, person: canBo || lot.chu, sched: n % kS === 0, fly: 0, occs: [] });
     for (const o of cfg.occ) {
       const s = SM[o.stage], pest = V[o.pest]; if (!s || !pest || pest.trap) continue;
       if (!lotsOf(o, r).includes(lot.ma)) continue;
-      add({ key: `${lot.k}|o|${o.id}`, kind: "pest", occ: o, pest, d: s.start + Math.round(num(o.offset)) + shift });
+      const oj = lech && !own ? Math.floor(hash01(`${lot.k}|o|${o.id}`) * 7) - 3 : 0;
+      add({ key: `${lot.k}|o|${o.id}`, kind: "pest", occ: o, pest, d: s.start + Math.round(num(o.offset)) + shift + oj });
     }
   });
   for (const e of events) {
@@ -2068,7 +2103,7 @@ function communeKeys() {
 /* ============================================================ process template (Excel): export the current process, import an edited / converted one */
 const QT_MV = [
   ["Ngày bắt đầu vụ (sau thu hoạch), dd/mm", c => c.seasonStart, (c, v) => c.seasonStart = String(v).trim()],
-  ["Lệch ngày giữa các hộ (0–5 ngày)", c => c.lechNgay, (c, v) => c.lechNgay = num(v)],
+  ["Lệch ngày giữa các hộ (0–7 ngày)", c => c.lechNgay, (c, v) => c.lechNgay = num(v)],
   ["Cán bộ kiểm tra bẫy, điều tra (trống = chủ lô)", c => c.canBo, (c, v) => c.canBo = String(v).trim()],
   ["Ngừng phun thuốc trước thu hoạch tối thiểu (ngày)", c => c.minPhi, (c, v) => c.minPhi = num(v)],
   ["Giữa 2 lần phun thuốc BVTV tối thiểu (ngày)", c => c.spacing.thuoc, (c, v) => c.spacing.thuoc = num(v)],
@@ -2218,7 +2253,7 @@ function renderQuyTrinh() {
   const fld = (lab, k, obj = cfg, type = "text", ph = "") => { const i = h("input", { value: obj[k] ?? "", type, placeholder: ph }); i.addEventListener("change", () => { obj[k] = type === "number" ? num(i.value) : i.value.trim(); save(); }); return h("label", { class: "f" }, lab, i); };
   el.append(h("div", { class: "card" }, h("h2", {}, "Mùa vụ"), h("div", { class: "grid" },
     fld("Ngày bắt đầu vụ (sau thu hoạch), dd/mm", "seasonStart", cfg, "text", "15/08"),
-    fld("Lệch ngày giữa các hộ (0–5 ngày)", "lechNgay", cfg, "number"),
+    fld("Lệch ngày giữa các hộ (0–7 ngày)", "lechNgay", cfg, "number"),
     fld("Cán bộ kiểm tra bẫy, điều tra (để trống = chủ lô)", "canBo"),
     fld("Ngừng phun thuốc trước thu hoạch tối thiểu (ngày)", "minPhi", cfg, "number"),
     fld("Giữa 2 lần phun thuốc BVTV tối thiểu (ngày)", "thuoc", cfg.spacing, "number"),
@@ -2257,7 +2292,7 @@ function renderQuyTrinh() {
       { k: "offset", t: "Ngày sau bắt đầu GĐ", type: "num", w: 70 }, { k: "muc", t: "Mức gây hại", type: "select", opts: MUC.map(x => [x[0], x[0]]), w: 100 },
       { k: "xuLy", t: "Xử lý", type: "select", opts: [["thucong", "Thủ công / sinh học"], ["hoa", "Hóa học (phun thuốc)"]], w: 150 },
       { k: "prod", t: "Thuốc (trống = mặc định)", type: "select", opts: () => prOpts("Mặc định"), w: 140 }, { k: "thoiTiet", t: "Thời tiết", type: "select", opts: WEATHER.map(x => [x[0], x[0] || "—"]), w: 90 },
-      { k: "lots", t: "Lô áp dụng", w: 180, ph: "trống = tất cả lô" }], cfg.occ,
+      { k: "lots", t: "Lô áp dụng", w: 180, ph: "trống = tất cả lô; VD 60% = khoảng 60% số lô" }], cfg.occ,
       { onChange: save, newRow: () => ({ id: uid(), pest: cfg.pests[0]?.id || "", stage: cfg.stages[0]?.id || "", offset: 0, muc: "Thấp", xuLy: "thucong", prod: "", thoiTiet: "", soLuong: "", lots: "" }) })));
   el.append(h("div", { class: "card" }, h("h2", {}, "Giám sát ISPM 6"), h("div", { class: "grid" },
     fld("Kiểm tra bẫy, sâu bệnh định kỳ: mỗi (ngày)", "every", cfg.monitor, "number"), fld("Lần kiểm tra đầu: ngày thứ … của vụ", "start", cfg.monitor, "number"),

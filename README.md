@@ -13,7 +13,7 @@ Công cụ chạy trên trình duyệt, không cần cài đặt, để lập b�
 
 ## Mẫu quy trình có sẵn
 
-- Quy trình Buôn Hồ (mẫu chuẩn, mặc định cho mọi xã/phường): vụ từ 01/11, 9 giai đoạn theo nhật ký HTX Đoàn Kết Buôn Hồ. Tên thuốc, hoạt chất, đối tượng và cách ly (14 ngày) theo góp ý chuyên gia 19/11/2026.
+- Quy trình Buôn Hồ (mẫu chuẩn, mặc định cho mọi xã/phường): vụ từ 01/11, 9 giai đoạn theo nhật ký HTX Đoàn Kết Buôn Hồ. Tên thuốc, hoạt chất, đối tượng và cách ly (14 ngày) theo góp ý chuyên gia 19/11/2026. Diễn biến sâu bệnh mẫu 8–10 lần/lô/vụ (một số đợt chỉ ở khoảng 50–60% số lô), lịch các lô lệch nhau đến 6 ngày; không có ruồi đục quả, rệp sáp trong mẫu – chỉ ghi khi nhập kết quả kiểm tra thật.
 - Quy trình Đắk Lắk: vụ từ 01/09, 8 giai đoạn.
 
 Chọn ở tab 2, ô "Áp dụng mẫu quy trình…".
