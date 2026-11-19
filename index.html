@@ -264,7 +264,7 @@ function defaultConfig(xa) {
     O("v_tt", "s7", 45, "Thấp", "thucong"),
   ];
   return {
-    v: 3, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
+    v: 4, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
     monitor: { every: 14, start: 7, vn: "Kiểm tra sâu bệnh định kỳ", cn: "定期病虫害检查" },
     survey: { every: 28 },
     spray: { nuoc: 6, binh: 200 },
@@ -362,7 +362,7 @@ function buonHoConfig(xa) {
     T("b9", 0, "cham", "Ngưng thuốc BVTV và phân bón; theo dõi độ già trái", "停止使用农药和肥料；监测果实成熟度"),
     // thu hoạch tháng 9–10 theo mùa vụ FarmBase (nhật ký mẫu chưa có dòng thu hoạch)
     T("b9", 15, "thu", "Thu hoạch trái đạt độ chín, cắt cuống đúng kỹ thuật", "采收达到成熟度的果实，按技术要求剪果柄"),
-    T("b9", 40, "thu", "Phân loại, sơ chế, bảo quản trái nơi thoáng mát; vệ sinh dụng cụ thu hoạch", "果实分级、初加工并于阴凉处存放；清洁采收工具"),
+    T("b9", 17, "thu", "Phân loại, sơ chế, bảo quản trái nơi thoáng mát; vệ sinh dụng cụ thu hoạch", "果实分级、初加工并于阴凉处存放；清洁采收工具"),
   ];
   const base = defaultConfig(xa);
   const pmap = { v_heo: "q_coc", v_phy: "q_agri", v_rs: "q_movento", v_rsb: "q_movento", v_rst: "q_movento", v_ray: "q_yapoko", v_sdt: "q_actimax", v_sal: "q_actimax", v_sab: "q_actimax", v_tt: "q_antracol", v_rhi: "q_antracol" };
@@ -371,8 +371,26 @@ function buonHoConfig(xa) {
     { id: "v_nhen", vn: "Nhện đỏ", cn: "红蜘蛛", sci: "Tetranychidae", viTri: "Lá, đọt non", viTriCn: "叶片、嫩梢", bpHoa: "Phun {P}, theo dõi mật độ", bpHoaCn: "喷施{P}，监测密度", bpTc: "Tưới phun mưa rửa tán, theo dõi mật độ", bpTcCn: "喷水冲洗树冠，监测密度", prod: "q_superrex", thang: "1-5", trap: false },
     { id: "v_rayx", vn: "Rầy xanh", cn: "小绿叶蝉", sci: "Cicadellidae", viTri: "Đọt non, lá non", viTriCn: "嫩梢、嫩叶", bpHoa: "Phun {P} khi mật độ cao", bpHoaCn: "密度高时喷施{P}", bpTc: "Theo dõi mật độ, chỉ xử lý khi cần", bpTcCn: "监测密度，必要时处理", prod: "q_yapoko", thang: "1-5", trap: false });
   const O = (pest, stage, offset, muc, xuLy) => ({ id: uid(), pest, stage, offset, muc, xuLy, prod: "", thoiTiet: "", soLuong: "", lots: "" });
-  const occ = [O("v_phy", "b2", 11, "Thấp", "hoa"), O("v_nhen", "b3", 4, "Trung bình", "hoa"), O("v_rayx", "b5", 28, "Thấp", "thucong"), O("v_phy", "b8", 5, "Trung bình", "hoa")];
-  return { ...base, mau: "buonho", xa, seasonStart: "01/11", stages: st, tasks, products: pr, pests, occ };
+  const occ = buonHoOcc(O);
+  return { ...base, mau: "buonho", xa, seasonStart: "01/11", lechNgay: 6, stages: st, tasks, products: pr, pests, occ };
+}
+// diễn biến sâu bệnh mẫu Buôn Hồ: 8–10 lần/lô/vụ theo mùa ở Đắk Lắk; "60%" = chỉ khoảng 60% số lô (chọn cố định theo lô)
+// không có ruồi đục quả, rệp sáp, sâu đục quả trong mẫu: các đối tượng kiểm dịch chỉ ghi khi người dùng nhập kết quả kiểm tra thật
+function buonHoOcc(O) {
+  const L = (o, lots) => ({ ...o, lots });
+  return [
+    L(O("v_heo", "b1", 30, "Thấp", "thucong"), "60%"),
+    O("v_phy", "b2", 11, "Thấp", "hoa"),
+    O("v_ray", "b3", 3, "Thấp", "thucong"),
+    L(O("v_sal", "b3", 10, "Thấp", "thucong"), "50%"),
+    O("v_nhen", "b3", 18, "Trung bình", "hoa"),
+    L(O("v_sab", "b5", 10, "Thấp", "thucong"), "50%"),
+    O("v_rayx", "b5", 12, "Thấp", "thucong"),
+    L(O("v_nhen", "b5", 30, "Thấp", "thucong"), "60%"),
+    O("v_tt", "b7", 40, "Thấp", "thucong"),
+    O("v_phy", "b8", 5, "Trung bình", "hoa"),
+    L(O("v_phy", "b8", 30, "Thấp", "thucong"), "50%"),
+  ];
 }
 const PROC_TEMPLATES = [["buonho", "Quy trình Buôn Hồ (chuẩn)", buonHoConfig], ["daklak", "Quy trình Đắk Lắk", defaultConfig]];
 // new commune: Quy trình Buôn Hồ là mẫu chuẩn cho mọi xã/phường; Quy trình Đắk Lắk vẫn chọn được ở tab Quy trình
@@ -816,6 +834,13 @@ function layStages(list, start, end) {
   });
   return out;
 }
+// days from the harvest task to the end of the last stage: a harvest date typed by the user = the "Thu hoạch" task date,
+// so the season (last stage) ends this many days later (post-harvest sorting, checks)
+function harvestTail(cfg) {
+  const last = cfg.stages[cfg.stages.length - 1]; if (!last) return 0;
+  const offs = cfg.tasks.filter(t => t.kind === "thu" && t.stage === last.id).map(t => Math.round(num(t.offset)));
+  return offs.length ? Math.max(0, Math.round(num(last.days)) - 1 - Math.min(...offs)) : 0;
+}
 const flowerIdx = cfg => { const i = cfg.stages.findIndex(s => s.hoa); return i < 0 ? -1 : i; };
 // season fixed by start/end: stages from flowering to harvest keep their biological length, earlier stages stretch or shrink to fill
 function stagesSpan(cfg, start, end) {
@@ -832,7 +857,7 @@ function stagesSpan(cfg, start, end) {
 // per-lot calendar: the lot's own flowering date and/or harvest-end date move its stages
 function lotStages(cfg, base, lt) {
   const fi = flowerIdx(cfg);
-  const hoa = lt && fromDMY(lt.hoa), thu = lt && fromDMY(lt.thu);
+  const hoa = lt && fromDMY(lt.hoa), thu0 = lt && fromDMY(lt.thu), thu = thu0 == null ? null : thu0 + harvestTail(cfg);
   if (hoa == null && thu == null) return null;
   const S0 = base[0].start, E = base[base.length - 1].end;
   if (fi < 0) return thu != null && thu > S0 + 60 ? layStages(cfg.stages, S0, thu) : null;
@@ -854,8 +879,12 @@ function viTriAt(v, st) {
   return bi(kv.join(", "), kc.join("、"));
 }
 function stageAt(stages, d) { return stages.find(s => d >= s.start && d <= s.end) || (d < stages[0].start ? stages[0] : stages[stages.length - 1]); }
+// stable pseudo-random 0..1 from a string (same lot + same row -> same value every export)
+function hash01(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10007) / 10007; }
 function lotsOf(occ, r) {
   const t = String(occ.lots || "").trim(); if (!t) return r.lots.map(l => l.ma);
+  const pc = /^(\d{1,3})\s*%$/.exec(t);
+  if (pc) return r.lots.map(l => l.ma).filter(ma => hash01(`${occ.id}|${ma}`) < +pc[1] / 100);
   return t.split(/[,;\s]+/).filter(Boolean);
 }
 function migrateCfg(cfg) {
@@ -888,6 +917,17 @@ function migrateCfg(cfg) {
       }
     }
     cfg.v = 3;
+  }
+  if (!(cfg.v >= 4)) {
+    // v4: Quy trình Buôn Hồ – diễn biến sâu bệnh mẫu 8–10 lần/lô, lệch ngày giữa các hộ 6 ngày (chỉ khi còn đúng mẫu cũ)
+    if (cfg.mau === "buonho") {
+      const sig = o => `${o.pest}|${o.stage}|${o.offset}|${o.muc}|${o.xuLy}|${o.lots || ""}`;
+      const old = ["v_phy|b2|11|Thấp|hoa|", "v_nhen|b3|4|Trung bình|hoa|", "v_rayx|b5|28|Thấp|thucong|", "v_phy|b8|5|Trung bình|hoa|"];
+      if ((cfg.occ || []).map(sig).join(";") === old.join(";")) cfg.occ = buonHoConfig(cfg.xa).occ;
+      if (num(cfg.lechNgay) === 2) cfg.lechNgay = 6;
+      for (const t of cfg.tasks) if (t.stage === "b9" && t.kind === "thu" && /^Phân loại/.test(t.vn) && num(t.offset) === 40) t.offset = 17;
+    }
+    cfg.v = 4;
   }
   return cfg;
 }
@@ -962,14 +1002,18 @@ function buildPlan(r, cfg, year, span) {
     for (const t of cfg.tasks) {
       const s = SM[t.stage]; if (!s) continue;
       let d = s.start + Math.round(num(t.offset)), n = 0; const rep = Math.round(num(t.repeat));
-      while (d <= s.end) { add({ key: `${lot.k}|t|${t.id}|${n}`, kind: "task", task: t, d: d + shift }); n++; if (!(rep > 0)) break; d += rep; }
+      if (t.kind === "thu" && s === lot.Ls[lot.Ls.length - 1]) d = s.end - (Math.max(1, Math.round(num(s.days))) - 1 - Math.round(num(t.offset)));
+      // chăm sóc, bón phân lệch thêm 0–3 ngày theo từng lô để các lô không trùng lịch hoàn toàn (phun và thu hoạch giữ theo quy trình)
+      const jit = (lech || own) && ["cham", "bon"].includes(t.kind) ? Math.floor(hash01(`${lot.k}|${t.id}`) * 4) : 0;
+      while (d <= s.end) { add({ key: `${lot.k}|t|${t.id}|${n}`, kind: "task", task: t, d: d + shift + jit }); n++; if (!(rep > 0)) break; d += rep; }
     }
     for (let d = sStart + Math.round(num(cfg.monitor.start)) + shift, n = 0; d <= lEnd; d += me, n++)
       add({ key: `${lot.k}|m|${n}`, kind: "mon", d, person: canBo || lot.chu, sched: n % kS === 0, fly: 0, occs: [] });
     for (const o of cfg.occ) {
       const s = SM[o.stage], pest = V[o.pest]; if (!s || !pest || pest.trap) continue;
       if (!lotsOf(o, r).includes(lot.ma)) continue;
-      add({ key: `${lot.k}|o|${o.id}`, kind: "pest", occ: o, pest, d: s.start + Math.round(num(o.offset)) + shift });
+      const oj = lech || own ? Math.floor(hash01(`${lot.k}|o|${o.id}`) * 7) - 3 : 0;
+      add({ key: `${lot.k}|o|${o.id}`, kind: "pest", occ: o, pest, d: s.start + Math.round(num(o.offset)) + shift + oj });
     }
   });
   for (const e of events) {
@@ -2078,7 +2122,7 @@ function communeKeys() {
 /* ============================================================ process template (Excel): export the current process, import an edited / converted one */
 const QT_MV = [
   ["Ngày bắt đầu vụ (sau thu hoạch), dd/mm", c => c.seasonStart, (c, v) => c.seasonStart = String(v).trim()],
-  ["Lệch ngày giữa các hộ (0–5 ngày)", c => c.lechNgay, (c, v) => c.lechNgay = num(v)],
+  ["Lệch ngày giữa các hộ (0–7 ngày)", c => c.lechNgay, (c, v) => c.lechNgay = num(v)],
   ["Cán bộ kiểm tra bẫy, điều tra (trống = chủ lô)", c => c.canBo, (c, v) => c.canBo = String(v).trim()],
   ["Ngừng phun thuốc trước thu hoạch tối thiểu (ngày)", c => c.minPhi, (c, v) => c.minPhi = num(v)],
   ["Giữa 2 lần phun thuốc BVTV tối thiểu (ngày)", c => c.spacing.thuoc, (c, v) => c.spacing.thuoc = num(v)],
@@ -2228,7 +2272,7 @@ function renderQuyTrinh() {
   const fld = (lab, k, obj = cfg, type = "text", ph = "") => { const i = h("input", { value: obj[k] ?? "", type, placeholder: ph }); i.addEventListener("change", () => { obj[k] = type === "number" ? num(i.value) : i.value.trim(); save(); }); return h("label", { class: "f" }, lab, i); };
   el.append(h("div", { class: "card" }, h("h2", {}, "Mùa vụ"), h("div", { class: "grid" },
     fld("Ngày bắt đầu vụ (sau thu hoạch), dd/mm", "seasonStart", cfg, "text", "15/08"),
-    fld("Lệch ngày giữa các hộ (0–5 ngày)", "lechNgay", cfg, "number"),
+    fld("Lệch ngày giữa các hộ (0–7 ngày)", "lechNgay", cfg, "number"),
     fld("Cán bộ kiểm tra bẫy, điều tra (để trống = chủ lô)", "canBo"),
     fld("Ngừng phun thuốc trước thu hoạch tối thiểu (ngày)", "minPhi", cfg, "number"),
     fld("Giữa 2 lần phun thuốc BVTV tối thiểu (ngày)", "thuoc", cfg.spacing, "number"),
@@ -2267,7 +2311,7 @@ function renderQuyTrinh() {
       { k: "offset", t: "Ngày sau bắt đầu GĐ", type: "num", w: 70 }, { k: "muc", t: "Mức gây hại", type: "select", opts: MUC.map(x => [x[0], x[0]]), w: 100 },
       { k: "xuLy", t: "Xử lý", type: "select", opts: [["thucong", "Thủ công / sinh học"], ["hoa", "Hóa học (phun thuốc)"]], w: 150 },
       { k: "prod", t: "Thuốc (trống = mặc định)", type: "select", opts: () => prOpts("Mặc định"), w: 140 }, { k: "thoiTiet", t: "Thời tiết", type: "select", opts: WEATHER.map(x => [x[0], x[0] || "—"]), w: 90 },
-      { k: "lots", t: "Lô áp dụng", w: 180, ph: "trống = tất cả lô" }], cfg.occ,
+      { k: "lots", t: "Lô áp dụng", w: 180, ph: "trống = tất cả lô; VD 60% = khoảng 60% số lô" }], cfg.occ,
       { onChange: save, newRow: () => ({ id: uid(), pest: cfg.pests[0]?.id || "", stage: cfg.stages[0]?.id || "", offset: 0, muc: "Thấp", xuLy: "thucong", prod: "", thoiTiet: "", soLuong: "", lots: "" }) })));
   el.append(h("div", { class: "card" }, h("h2", {}, "Giám sát ISPM 6"), h("div", { class: "grid" },
     fld("Kiểm tra bẫy, sâu bệnh định kỳ: mỗi (ngày)", "every", cfg.monitor, "number"), fld("Lần kiểm tra đầu: ngày thứ … của vụ", "start", cfg.monitor, "number"),
@@ -2439,15 +2483,17 @@ function renderXuat() {
   const cfg = migrateCfg(S.communes[xaKey]);
   if (X.year == null || X._rid !== X.rid) { X.year = currentSeasonYear(cfg); X._rid = X.rid; X.from = null; X.to = null; X.lot = ""; X.endD = null; X.prevEnd = null; }
   if (!X.mode) X.mode = "vu";
-  if (X.mode === "kt" && X.endD == null) { const pl = buildPlan(r, cfg, X.year); X.endD = pl.stages[pl.stages.length - 1].end; }
-  const SP = () => X.mode === "kt" ? { start: X.prevEnd != null && X.prevEnd < X.endD - 120 ? X.prevEnd + 1 : X.endD - 364, end: X.endD } : null;
+  const tail = harvestTail(cfg);
+  if (X.mode === "kt" && X.endD == null) { const pl = buildPlan(r, cfg, X.year); X.endD = pl.stages[pl.stages.length - 1].end - tail; }
+  // X.endD, X.prevEnd = ngày thu hoạch (vụ này, vụ trước); vụ kết thúc sau thu hoạch "tail" ngày (sơ chế, kiểm tra sau thu hoạch)
+  const SP = () => X.mode === "kt" ? { start: X.prevEnd != null && X.prevEnd < X.endD - 120 ? X.prevEnd + tail + 1 : X.endD + tail - 364, end: X.endD + tail } : null;
   const YR = () => X.mode === "kt" ? yearOf(SP().start) : X.year;
   const mk = () => buildPlan(r, cfg, YR(), SP());
   let plan = mk();
   if (X.from == null) X.from = plan.sStart;
   if (X.to == null) X.to = Math.min(todayDn(), plan.sEnd);
   const reset = () => { X.from = X.to = null; renderXuat(); };
-  const modeSel = h("select", {}, [["vu", "Theo ngày bắt đầu vụ của xã/phường"], ["kt", "Nhập ngày kết thúc vụ, tự tính ngược"]].map(([v, t]) => h("option", { value: v }, t)));
+  const modeSel = h("select", {}, [["vu", "Theo ngày bắt đầu vụ của xã/phường"], ["kt", "Nhập ngày thu hoạch, tự tính ngược"]].map(([v, t]) => h("option", { value: v }, t)));
   modeSel.value = X.mode; modeSel.addEventListener("change", () => { X.mode = modeSel.value; X.endD = null; X.prevEnd = null; reset(); });
   const seasonCtl = [];
   if (X.mode === "vu") {
@@ -2457,9 +2503,9 @@ function renderXuat() {
   } else {
     const endI = dIn(X.endD);
     endI.addEventListener("change", () => { const v = parseD(endI.value); if (v != null) { X.endD = v; X.prevEnd = null; reset(); } });
-    const prevI = dIn(SP().start - 1);
+    const prevI = dIn(SP().start - 1 - tail);
     prevI.addEventListener("change", () => { const v = parseD(prevI.value); if (v != null) { X.prevEnd = v; reset(); } });
-    seasonCtl.push(h("label", { class: "f" }, "Ngày kết thúc vụ (thu hoạch xong)", endI), h("label", { class: "f" }, "Thu hoạch xong vụ trước (tự tính, sửa được)", prevI));
+    seasonCtl.push(h("label", { class: "f" }, "Ngày thu hoạch vụ này", endI), h("label", { class: "f" }, "Ngày thu hoạch vụ trước (tự tính, sửa được)", prevI));
   }
   const fromI = dIn(X.from), toI = dIn(X.to);
   // typing a date that belongs to another season switches the season to it (only when the season follows the commune's start date)
@@ -2625,17 +2671,17 @@ function renderXuat() {
     const mkI = k => { const v = fromDMY(cur[k]); const i = dIn(v);
       i.addEventListener("change", () => { const o = lotEd(); const x = { ...(o[l.k] || {}) }; const d = parseD(i.value); if (d == null && i.value.trim()) return; if (d != null) x[k] = fmt(d); else delete x[k];
         if (Object.keys(x).length) o[l.k] = x; else delete o[l.k]; saveEd(); renderXuat(); }); return i; };
-    const fl = l.Ls.find(s => s.hoa), last = l.Ls[l.Ls.length - 1];
+    const fl = l.Ls.find(s => s.hoa), last = l.Ls[l.Ls.length - 1], tailL = harvestTail(cfg);
     const bad = (cur.hoa || cur.thu) && !l.own;
     return h("tr", {}, h("td", {}, l.ma), h("td", {}, l.chu), h("td", {}, String(l.soCay || "–")),
       h("td", {}, l.age == null ? "–" : `${l.age} năm (× ${String(l.f).replace(".", ",")})`),
       h("td", {}, mkI("hoa")), h("td", {}, mkI("thu")),
       h("td", { class: bad ? "miss" : "" }, bad ? "Ngày không hợp lệ (ra hoa phải sau đầu vụ > 30 ngày, thu hoạch sau ra hoa > 30 ngày)" :
-        `${fl ? `Ra hoa ${fmt(fl.start)}; ` : ""}thu hoạch ${fmt(last.start)} – ${fmt(last.end)}${l.own ? "" : " (lịch chung)"}`));
+        `${fl ? `Ra hoa ${fmt(fl.start)}; ` : ""}thu hoạch ${fmt(last.end - tailL)}; kết thúc vụ ${fmt(last.end)}${l.own ? "" : " (lịch chung)"}`));
   }));
   el.append(h("div", { class: "card" }, h("h2", {}, "Ngày ra hoa, thu hoạch của từng lô (vụ này)"),
-    h("p", { class: "muted" }, "Mỗi vườn ra hoa và thu hoạch khác nhau. Nhập ngày hoa nở (xả nhụy) hoặc ngày thu hoạch xong thực tế của lô; công cụ dời các giai đoạn, công việc, lần kiểm tra và sâu bệnh của lô theo ngày đó. Chỉ nhập một ngày thì giữ nguyên thời gian từ hoa đến thu hoạch. Để trống = theo lịch chung. Lượng phân, nước phun tính theo tuổi cây (năm trồng) và số cây của lô."),
-    h("div", { class: "tw" }, h("table", { class: "t" }, h("thead", {}, h("tr", {}, ["Mã lô", "Chủ lô", "Số cây", "Tuổi cây (hệ số)", "Ngày hoa nở", "Ngày thu hoạch xong", "Lịch của lô"].map(t => h("th", {}, t)))), calTb))));
+    h("p", { class: "muted" }, "Mỗi vườn ra hoa và thu hoạch khác nhau. Nhập ngày hoa nở (xả nhụy) hoặc ngày thu hoạch thực tế của lô (ngày cắt trái); công cụ dời các giai đoạn, công việc, lần kiểm tra và sâu bệnh của lô theo ngày đó. Chỉ nhập một ngày thì giữ nguyên thời gian từ hoa đến thu hoạch. Để trống = theo lịch chung. Lượng phân, nước phun tính theo tuổi cây (năm trồng) và số cây của lô."),
+    h("div", { class: "tw" }, h("table", { class: "t" }, h("thead", {}, h("tr", {}, ["Mã lô", "Chủ lô", "Số cây", "Tuổi cây (hệ số)", "Ngày hoa nở", "Ngày thu hoạch", "Lịch của lô"].map(t => h("th", {}, t)))), calTb))));
 
   // ---- products each household actually bought
   const owners = [...new Map(plan.lots.map(l => [hoKey(l.chu), l.chu])).entries()];
