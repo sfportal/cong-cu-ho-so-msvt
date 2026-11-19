@@ -138,9 +138,12 @@ const SPECTRUM = [
   [/propargite|hexythiazox|fenpyroximate|pyridaben|spirodiclofen|etoxazole/i, /nhện/i],
   [/abamectin/i, /nhện|sâu ăn/i],
   [/emamectin|bacillus|\bbt\b|chlorantraniliprole|indoxacarb|lufenuron|spinetoram/i, /^sâu/i],
+  [/cyhalothrin|cypermethrin/i, /sâu ăn|bọ trĩ/i],
   [/thiamethoxam|imidacloprid|dinotefuran|clothianidin|acetamiprid|buprofezin|spirotetramat|pymetrozine/i, /rầy|rệp/i],
-  [/fosetyl|metalaxyl|dimethomorph|cymoxanil|phosphonate|trichoderma/i, /phytophthora|xì mủ|thối/i],
-  [/mancozeb|propineb|copper|đồng|oxychloride/i, /phytophthora|thán thư/i],
+  [/fosetyl|metalaxyl|dimethomorph|cymoxanil|phosphon|phosphorous|trichoderma|mandipropamid|oxathiapiprolin/i, /phytophthora|xì mủ|thối/i],
+  [/mancozeb|copper|đồng|oxychloride/i, /phytophthora|thán thư/i],
+  // propineb: thán thư, cháy lá; không trị Phytophthora (chuyên gia góp ý 19/11/2026)
+  [/propineb/i, /thán thư|cháy lá/i],
   [/hexaconazole|difenoconazole|azoxystrobin|tebuconazole|propiconazole|carbendazim/i, /thán thư|cháy lá|héo/i]];
 function preventPurpose(cfg, P, p, t, d) {
   if (!isPesticide(p) || !["sau", "benh"].includes(p.loai)) return [t.vn, t.cn];
@@ -261,7 +264,7 @@ function defaultConfig(xa) {
     O("v_tt", "s7", 45, "Thấp", "thucong"),
   ];
   return {
-    v: 2, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
+    v: 3, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
     monitor: { every: 14, start: 7, vn: "Kiểm tra sâu bệnh định kỳ", cn: "定期病虫害检查" },
     survey: { every: 28 },
     spray: { nuoc: 6, binh: 200 },
@@ -283,26 +286,26 @@ function buonHoConfig(xa) {
     ["b7", "Dưỡng trái non", "幼果期", 53], ["b8", "Dưỡng trái/trái lớn", "果实膨大期", 49], ["b9", "Trái già/thu hoạch", "成熟采收期", 62]].map(([id, vn, cn, days, hoa]) => ({ id, vn, cn, days, hoa: !!hoa }));
   // [id, tên (theo danh mục FarmBase), hoạt chất, loại, liều, kg/cây, đơn vị, cách ly, nồng độ /100 lít, đơn vị nồng độ]
   const pr = [
-    ["q_coc", "Coc 85", "Copper Oxychloride 85%", "benh", "Theo hướng dẫn nhãn", "", "", "", "", ""],
+    ["q_coc", "Coc 85", "Copper Oxychloride 85%", "benh", "Theo hướng dẫn nhãn", "", "", 14, "", ""],
     ["q_humic", "Humic", "", "phan", "", 0.7, "kg", "", "", ""],
-    ["q_agri", "Agrifor + Mantalaxy", "", "benh", "Theo hướng dẫn nhãn", "", "", "", "", ""],
+    ["q_agri", "Agri-Fos 400SL + Metalaxyl", "Phosphorous acid 400 g/l + Metalaxyl", "benh", "Theo hướng dẫn nhãn", "", "", 14, "", ""],
     ["q_npk20", "NPK 20-10-10", "N 20%, P2O5 10%, K2O 10%", "phan", "", 1, "kg", "", "", ""],
     ["q_hcn", "Phân hữu cơ (nở)", "Chất hữu cơ", "huuco", "", 3, "kg", "", "", ""],
-    ["q_yapoko", "Yapoko 250SC + PBL 30-10-10", "Thiamethoxam 140 g/lít", "sau", "", "", "", 10, 70, "ml"],
-    ["q_superrex", "Superrex 73EC + 30-10-10 + Amino", "Propargite 730 g/lít", "sau", "", "", "", 10, 100, "ml"],
-    ["q_movento", "Movento 150 OD + 20-20-20 + Amino", "Spirotetramat 150 g/lít", "sau", "", "", "", 10, 100, "ml"],
+    ["q_yapoko", "Yapoko 250SC + PBL 30-10-10", "Thiamethoxam 140 g/l + Lambda-cyhalothrin 110 g/l", "sau", "", "", "", 14, 70, "ml"],
+    ["q_superrex", "Superrex 73EC + 30-10-10 + Amino", "Propargite 730 g/l", "sau", "", "", "", 14, 100, "ml"],
+    ["q_movento", "Movento 150 OD + 20-20-20 + Amino", "Spirotetramat 150 g/l", "sau", "", "", "", 14, 100, "ml"],
     ["q_lan", "Lân Văn Điển", "P2O5", "phan", "", 4, "kg", "", "", ""],
     ["q_hnpk", "Humic + NPK 20-10-10", "Humic; N 20%, P2O5 10%, K2O 10%", "phan", "", 1, "kg", "", "", ""],
-    ["q_yapoko2", "Yapoko 250SC + Amino RB + Ca-Bo + 20-20-20 + Compi", "Thiamethoxam 140 g/lít", "sau", "", "", "", 10, 70, "ml"],
-    ["q_antracol", "Antracol 70WP (gốc kẽm)", "Propineb 70%", "benh", "", "", "", 7, 250, "g"],
-    ["q_superrex2", "Superrex 73EC + Amino RB + Ca-Bo + 20-20-20", "Propargite 730 g/lít", "sau", "", "", "", 10, 120, "ml"],
+    ["q_yapoko2", "Yapoko 250SC + Amino RB + Ca-Bo + 20-20-20 + Compi", "Thiamethoxam 140 g/l + Lambda-cyhalothrin 110 g/l", "sau", "", "", "", 14, 70, "ml"],
+    ["q_antracol", "Antracol 70WP (gốc kẽm)", "Propineb 70%", "benh", "", "", "", 14, 250, "g"],
+    ["q_superrex2", "Superrex 73EC + Amino RB + Ca-Bo + 20-20-20", "Propargite 730 g/l", "sau", "", "", "", 14, 120, "ml"],
     ["q_npk12", "NPK 12-11-18 + trung vi lượng", "N 12%, P2O5 11%, K2O 18% + TE", "phan", "", 1.5, "kg", "", "", ""],
-    ["q_actimax", "Actimax 50WG + RB + Ca-Bo", "Emamectin benzoate 50 g/kg", "sau", "", "", "", 7, 50, "g"],
-    ["q_yapoko3", "Yapoko 250SC + RB + Ca-Bo", "Thiamethoxam 140 g/lít", "sau", "", "", "", 10, 50, "ml"],
-    ["q_orande", "Orande 280SC", "", "benh", "", "", "", 7, 100, "ml"],
-    ["q_movento2", "Movento 150 OD + Amino RB + Ca-Bo + PBL 20-20-20", "Spirotetramat 150 g/lít", "sau", "", "", "", 10, 100, "ml"],
+    ["q_actimax", "Actimax 50WG + RB + Ca-Bo", "Emamectin benzoate 50 g/kg", "sau", "", "", "", 14, 50, "g"],
+    ["q_yapoko3", "Yapoko 250SC + RB + Ca-Bo", "Thiamethoxam 140 g/l + Lambda-cyhalothrin 110 g/l", "sau", "", "", "", 14, 50, "ml"],
+    ["q_orande", "Orande 280SC", "Mandipropamid 250 g/l + Oxathiapiprolin 30 g/l", "benh", "", "", "", 14, 100, "ml"],
+    ["q_movento2", "Movento 150 OD + Amino RB + Ca-Bo + PBL 20-20-20", "Spirotetramat 150 g/l", "sau", "", "", "", 14, 100, "ml"],
     ["q_qlam", "Phân vi sinh Quế Lâm", "Vi sinh vật có ích, chất hữu cơ", "huuco", "Theo tình trạng cây", "", "", "", "", ""],
-    ["q_actimax2", "Actimax 50WG + Amino RB + Ca-Bo + PBL 20-20-20", "Emamectin benzoate 50 g/kg", "sau", "", "", "", 7, 50, "g"],
+    ["q_actimax2", "Actimax 50WG + Amino RB + Ca-Bo + PBL 20-20-20", "Emamectin benzoate 50 g/kg", "sau", "", "", "", 14, 50, "g"],
   ].map(([id, ten, hoatChat, loai, lieu, perTree, donVi, phi, nd, ndDv]) => ({ id, ten, hoatChat, loai, lieu, perTree, donVi, phi, nd, ndDv, dk: false }));
   const T = (stage, offset, kind, vn, cn, prod = "", dose = "") => ({ id: uid(), stage, offset, repeat: 0, kind, vn, cn, prod, dose });
   const tasks = [
@@ -371,12 +374,9 @@ function buonHoConfig(xa) {
   const occ = [O("v_phy", "b2", 11, "Thấp", "hoa"), O("v_nhen", "b3", 4, "Trung bình", "hoa"), O("v_rayx", "b5", 28, "Thấp", "thucong"), O("v_phy", "b8", 5, "Trung bình", "hoa")];
   return { ...base, mau: "buonho", xa, seasonStart: "01/11", stages: st, tasks, products: pr, pests, occ };
 }
-const PROC_TEMPLATES = [["daklak", "Quy trình Đắk Lắk", defaultConfig], ["buonho", "Quy trình Buôn Hồ", buonHoConfig]];
-// new commune: Buôn Hồ template for Buôn Hồ, otherwise Đắk Lắk
-function newCommuneConfig(xa, info) {
-  const hay = norm([xa, info && info.diaChi, info && info.ten].filter(Boolean).join(" "));
-  return /buon ho/.test(hay) ? buonHoConfig(xa) : { ...defaultConfig(xa), mau: "daklak" };
-}
+const PROC_TEMPLATES = [["buonho", "Quy trình Buôn Hồ (chuẩn)", buonHoConfig], ["daklak", "Quy trình Đắk Lắk", defaultConfig]];
+// new commune: Quy trình Buôn Hồ là mẫu chuẩn cho mọi xã/phường; Quy trình Đắk Lắk vẫn chọn được ở tab Quy trình
+function newCommuneConfig(xa, info) { return buonHoConfig(xa); }
 
 /* ============================================================ state & storage */
 const S = { regions: {}, communes: {}, edits: {} };
@@ -864,6 +864,20 @@ function migrateCfg(cfg) {
       else { t.vn = "Phân loại, sơ chế, bảo quản trái nơi thoáng mát; vệ sinh dụng cụ thu hoạch"; t.cn = "果实分级、初加工并于阴凉处存放；清洁采收工具"; }
     });
     cfg.v = 2;
+  }
+  if (!(cfg.v >= 3)) {
+    // v3: Quy trình Buôn Hồ – tên, hoạt chất, cách ly theo góp ý chuyên gia (19/11/2026); chỉ sửa ô còn giữ giá trị của mẫu cũ
+    if (cfg.mau === "buonho") {
+      const fresh = Object.fromEntries(buonHoConfig(cfg.xa).products.map(p => [p.id, p]));
+      const oldHc = new Set(["", "Thiamethoxam 140 g/lít", "Propargite 730 g/lít", "Spirotetramat 150 g/lít"]);
+      for (const p of cfg.products) {
+        const f = fresh[p.id]; if (!f || !isPesticide(p)) continue;
+        if (p.id === "q_agri" && p.ten === "Agrifor + Mantalaxy") p.ten = f.ten;
+        if (oldHc.has(String(p.hoatChat ?? ""))) p.hoatChat = f.hoatChat;
+        if (["", "7", "10"].includes(String(p.phi ?? ""))) p.phi = f.phi;
+      }
+    }
+    cfg.v = 3;
   }
   return cfg;
 }
@@ -2165,7 +2179,7 @@ function reportBox(title, errs, warns, onApply) {
 function renderQuyTrinh() {
   const el = $("#t-quytrinh"); el.replaceChildren();
   const keys = communeKeys();
-  if (!keys.length) { el.append(h("div", { class: "card muted" }, "Nhập một vùng trồng trước; mỗi xã/phường sẽ có một bộ quy trình riêng (mặc định: Quy trình Buôn Hồ cho vùng ở Buôn Hồ, còn lại Quy trình Đắk Lắk).")); return; }
+  if (!keys.length) { el.append(h("div", { class: "card muted" }, "Nhập một vùng trồng trước; mỗi xã/phường sẽ có một bộ quy trình riêng (mặc định: Quy trình Buôn Hồ; có thể đổi sang Quy trình Đắk Lắk).")); return; }
   if (!S.communes[UI.xa]) UI.xa = (UI.rid && S.regions[UI.rid] && slug(S.regions[UI.rid].info.xa || "chua_ro_xa")) || keys[0];
   const cfg = migrateCfg(S.communes[UI.xa]);
   const save = () => { persist("communes", UI.xa); refreshTimeline(); };
