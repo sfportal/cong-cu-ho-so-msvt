@@ -1805,6 +1805,10 @@ const Q_PH = [
   ["gs", "果园田间管理农事日志、有害生物监测设备及日常监测记录", "Nhật ký công việc nông nghiệp, thiết bị giám sát sâu bệnh và hồ sơ giám sát", "Field work logs, pest monitoring equipment and monitoring records", "bẫy pheromone, bẫy dính tại vườn; sổ nhật ký canh tác, nhật ký ra vào vườn", "性诱捕器、粘虫板；农事及出入记录本"],
   ["dt", "开展有害生物防治培训图片、证明、记录", "Đào tạo kiểm soát sâu bệnh: hình ảnh, chứng chỉ và tài liệu", "Pest control training: images, certificates and documentation", "buổi tập huấn, bảng thông báo sinh vật gây hại tại vườn, giấy chứng nhận", "培训现场、有害生物公告牌、证书"],
 ];
+// short captions for the photo appendix: a caption that is only a camera/app file name is replaced by the group's short name
+const Q_PH_SHORT = { sat: ["Vị trí vùng trồng", "种植区位置"], drone: ["Ảnh flycam vùng trồng", "无人机航拍"], kho: ["Kho chứa vật tư", "农资仓库"], thu: ["Thu hoạch", "采收"], gs: ["Giám sát sâu bệnh", "病虫害监测"], dt: ["Tập huấn", "培训"] };
+function isFileCap(c) { const t = String(c || "").trim(); return !t || /\d{8,}|[0-9a-f]{12,}/i.test(t) || /\.(jpe?g|png|heic|webp)$/i.test(t) || /^(img|dsc|dscn|image|photo|pxl|screenshot|z)[\s\d]*$/i.test(t) || (t.length > 50 && t.split(/\s+/).length < 4); }
+function shortCap(c, fb) { const t = String(c || "").trim(); if (isFileCap(t)) return fb; return t.length > 70 ? t.slice(0, 67).trim() + "…" : t; }
 const Q_PH_DESC = { kho: "pKho", thu: "pThuHoach", gs: "pGiamSat", dt: "pDaoTao" };
 const PHOTO_BUF = {};   // photo id -> ArrayBuffer (for the export)
 const LOCAL_PH = {};    // region id -> group -> photos kept only while the page is open (no photo storage)
@@ -1829,7 +1833,8 @@ async function addPhotos(r, g, files, quiet) {
     if (!/^image\//.test(f.type)) { failed.push(f.name); continue; }
     try {
       const { blob, w, h: hh } = await shrinkImage(f);
-      const cap = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/^(img|dsc|image|photo|z\d+)\s*\d*$/i, "").trim();
+      let cap = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/^(img|dsc|image|photo|z\d+)\s*\d*$/i, "").trim();
+      if (isFileCap(cap)) cap = "";
       if (assets) {
         const up = await assets.upload(blob);
         PHOTO_BUF[up.id] = await blob.arrayBuffer();
@@ -1955,10 +1960,13 @@ function buildQ(r, cfg, plan, from, to) {
     let w = PX(maxWcm), hh = Math.round(w * (p.h || 3) / (p.w || 4)); if (hh > PX(maxHcm)) { hh = PX(maxHcm); w = Math.round(hh * (p.w || 4) / (p.h || 3)); }
     return new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { after: 20 }, children: [new D.ImageRun({ data: buf, transformation: { width: w, height: hh } })] });
   };
+  let figN = 0;   // pictures numbered Hình 1, 2, 3… through the appendices
   const photoBlock = (n, g, vnHint, cnHint) => {
     const ps = photosOf(r, g);
     if (!ps.length) return [ph(vnHint, cnHint)];
-    const capOf = (p, i) => para(`Hình ${n}.${i + 1} / 图${n}.${i + 1}${p.cap ? ": " + p.cap : ""}`, { s: 9, i: true, al: "c", after: 4 });
+    const fb = Q_PH_SHORT[g] || ["Hình ảnh minh họa", "示意图"];
+    const nums = ps.map(() => ++figN);
+    const capOf = (p, i) => { const c = shortCap(p.cap, ""); return para(`Hình ${nums[i]} / 图${nums[i]}: ${c || `${fb[0]} / ${fb[1]}`}`, { s: 9, i: true, al: "c", after: 4 }); };
     if (ps.length === 1) return [imgPara(ps[0], 14, 10), capOf(ps[0], 0)];
     const HW = Math.floor(W / 2), rows = [];
     for (let i = 0; i < ps.length; i += 2) rows.push(new D.TableRow({ cantSplit: true, children: [0, 1].map(j => { const p = ps[i + j]; return cell(p ? [imgPara(p, 8.2, 6.2), capOf(p, i + j)] : [para("")], HW, { nob: true, va: D.VerticalAlign.TOP }); }) }));
@@ -1987,7 +1995,7 @@ function buildQ(r, cfg, plan, from, to) {
     ch.push(new D.Table({ columnWidths: [QW, W - QW], layout: D.TableLayoutType.FIXED, width: { size: W, type: D.WidthType.DXA }, borders: D.TableBorders.NONE, rows: [new D.TableRow({ cantSplit: true, children: [
       cell([PHOTO_BUF.__qr ? new D.Paragraph({ alignment: D.AlignmentType.CENTER, children: [new D.ImageRun({ data: PHOTO_BUF.__qr, transformation: { width: PX(4), height: PX(4) } })] }) : para("[QR]", { al: "c", c: "C00000" })], QW, { nob: true, va: D.VerticalAlign.CENTER }),
       cell([para("电子日志链接 / Link nhật ký điện tử:", { s: 10, b: true, after: 2 }), new D.Paragraph({ spacing: { after: 40 }, children: [new D.ExternalHyperlink({ link: r.nkLink, children: [new D.TextRun({ text: r.nkLink, style: "Hyperlink", color: "1F6FB2", underline: {}, size: 19, font: TNR })] })] }),
-        para(`Hình ${Q_PH.length + 1}.1 / 图${Q_PH.length + 1}.1: Mã QR nhật ký điện tử / 电子日志二维码`, { s: 9, i: true, after: 0 })], W - QW, { nob: true, va: D.VerticalAlign.CENTER })] })] }));
+        para(`Hình ${++figN} / 图${figN}: Mã QR nhật ký điện tử / 电子日志二维码`, { s: 9, i: true, after: 0 })], W - QW, { nob: true, va: D.VerticalAlign.CENTER })] })] }));
   }
   }
   // appendix 2: satellite images of every lot with its boundary
@@ -2000,7 +2008,7 @@ function buildQ(r, cfg, plan, from, to) {
       const ps = photosOf(r, lotKey(l));
       const info = [para(`${j + 1}. 农户 / Chủ hộ: ${l.chu || "–"}`, { s: 10, b: true, after: 2 }), para(`面积 / Diện tích: ${vnNum(num(l.dienTich))} ha`, { s: 9.5, after: 2 }),
         para(`株数 / Số cây: ${l.soCay || "–"}`, { s: 9.5, after: 2 }), para(`坐标 / Tọa độ: ${l.toaDo || "–"}`, { s: 9, after: 2 })];
-      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình 2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""} / 图2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""}: ${String(p.cap || "").replace(/ lô .+? – /, " – ") || `Ảnh vệ tinh – ${l.chu}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
+      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình ${++figN} / 图${figN}: ${shortCap(String(p.cap || "").replace(/ lô .+? – /, " – "), "") || `Ảnh vệ tinh – ${l.chu}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
         : [para(`[Chèn ảnh vệ tinh vườn hộ ${l.chu} có ranh giới]`, { s: 9.5, i: true, al: "c", c: "C00000", before: 22, after: 0 }), para(`[插入农户${l.chu}地块卫星图]`, { s: 9, i: true, al: "c", c: "C00000", after: 22 })];
       return new D.TableRow({ cantSplit: true, children: [cell(info, IW, { va: D.VerticalAlign.CENTER }), cell(pics, PW, { va: D.VerticalAlign.CENTER })] });
     });
