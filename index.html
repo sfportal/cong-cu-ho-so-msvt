@@ -264,7 +264,7 @@ function defaultConfig(xa) {
     O("v_tt", "s7", 45, "Thấp", "thucong"),
   ];
   return {
-    v: 4, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
+    v: 5, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
     monitor: { every: 14, start: 7, vn: "Kiểm tra sâu bệnh định kỳ", cn: "定期病虫害检查" },
     survey: { every: 28 },
     spray: { nuoc: 6, binh: 200 },
@@ -335,9 +335,9 @@ function buonHoConfig(xa) {
     T("b5", 15, "phun", "Phun thuốc + phân bón qua lá", "喷施农药+叶面肥", "q_yapoko2", "Thuốc 140 ml/phuy 200 lít; Amino 250 ml/phuy; Canxi Bo 250 ml/phuy"),
     T("b5", 22, "cham", "Tưới nước, kiểm tra bông", "浇水，检查花蕾"),
     T("b5", 23, "phun", "Kiểm tra và xử lý nấm", "检查并处理真菌病害", "q_antracol", "0,5 kg/200 lít"),
-    T("b5", 28, "cham", "Kiểm tra rầy, sâu và nhện đỏ", "检查叶蝉、害虫及红蜘蛛"),
-    T("b5", 34, "phun", "Phun thuốc + phân bón qua lá", "喷施农药+叶面肥", "q_superrex2", "Thuốc 240 ml/phuy 200 lít; Amino 250 ml/phuy; Canxi Bo 250 ml/phuy"),
-    T("b5", 44, "phun", "Tưới nước + kiểm tra, xử lý nấm gốc", "浇水+检查处理根部真菌病害", "q_agri"),
+    T("b5", 26, "cham", "Kiểm tra rầy, sâu và nhện đỏ", "检查叶蝉、害虫及红蜘蛛"),
+    T("b5", 30, "phun", "Phun thuốc + phân bón qua lá", "喷施农药+叶面肥", "q_superrex2", "Thuốc 240 ml/phuy 200 lít; Amino 250 ml/phuy; Canxi Bo 250 ml/phuy"),
+    T("b5", 38, "phun", "Tưới nước + kiểm tra, xử lý nấm gốc", "浇水+检查处理根部真菌病害", "q_agri"),
     T("b6", 0, "cham", "Kiểm tra bông trước xổ nhụy", "开花前检查花蕾"),
     T("b6", 5, "bon", "Bón phân trước xổ nhụy", "开花前施肥", "q_npk12"),
     T("b6", 17, "cham", "Xổ nhụy xong, tưới nước", "开花结束后浇水"),
@@ -388,7 +388,7 @@ function buonHoOcc(O) {
     O("v_rayx", "b5", 12, "Thấp", "thucong"),
     L(O("v_nhen", "b5", 30, "Thấp", "thucong"), "60%"),
     O("v_tt", "b7", 40, "Thấp", "thucong"),
-    O("v_phy", "b8", 5, "Trung bình", "hoa"),
+    O("v_phy", "b8", 2, "Trung bình", "hoa"),
     L(O("v_phy", "b8", 30, "Thấp", "thucong"), "50%"),
   ];
 }
@@ -929,6 +929,17 @@ function migrateCfg(cfg) {
     }
     cfg.v = 4;
   }
+  if (!(cfg.v >= 5)) {
+    // v5: Quy trình Buôn Hồ – dời 2 lần phun cuối giai đoạn dưỡng bông sớm hơn để không rơi vào lúc xổ nhụy (chỉ khi còn đúng mẫu)
+    if (cfg.mau === "buonho") for (const t of cfg.tasks) if (t.stage === "b5") {
+      const o = num(t.offset);
+      if (t.prod === "q_superrex2" && o === 34) t.offset = 30;
+      else if (t.prod === "q_agri" && o === 44) t.offset = 38;
+      else if (t.kind === "cham" && o === 28 && /^Kiểm tra rầy/.test(t.vn)) t.offset = 26;
+    }
+    if (cfg.mau === "buonho") for (const o of cfg.occ || []) if (o.pest === "v_phy" && o.stage === "b8" && num(o.offset) === 5 && o.xuLy === "hoa") o.offset = 2;
+    cfg.v = 5;
+  }
   return cfg;
 }
 function planLots(r) {
@@ -1026,6 +1037,14 @@ function buildPlan(r, cfg, year, span) {
     if (ed.fly != null && ed.fly !== "") e.flyEd = Math.max(0, Math.round(num(ed.fly)));
     if (e.kind === "mon") e.entered = !!(ed.obs || e.flyEd != null);
   }
+  // template occurrences follow the stage, but a pest only shows up in its usual months: when the back-calculated calendar puts one
+  // outside them, move it to the nearest in-season day (up to 45 days, same season); if none, the lot does not get it this season
+  for (const e of events) {
+    if (e.kind !== "pest" || e.deleted || e.dateEd || !e.pest.thang || inMonths(e.pest.thang, monthOf(e.d)) && inMonths(e.pest.thang, monthOf(e.d + 14))) continue;
+    let best = null;
+    for (let k = 0; k <= 45 && best == null; k++) for (const d of [e.d - k, e.d + k]) if (best == null && d >= sStart && d + 14 <= sEnd && inMonths(e.pest.thang, monthOf(d)) && inMonths(e.pest.thang, monthOf(d + 14))) best = d;
+    if (best == null) e.deleted = true; else { e.d = best; e.seasonMoved = true; }
+  }
   // region setting: checks done up to today with nothing entered count as "nothing found, 0 flies" (the user confirmed this once for the region)
   if (r.monNo) { const t = todayDn(); for (const e of events) if (e.kind === "mon" && !e.entered && !e.deleted && e.d <= t) { e.obs = {}; e.flyEd = 0; e.entered = true; e.autoNo = true; } }
   // other past checks with nothing entered take the result the process formula generates (template pests, 0 flies); shown as a warning, never blocks export
@@ -1090,13 +1109,25 @@ function buildPlan(r, cfg, year, span) {
   for (const e of events) if (!e.deleted && !e.into && e.prods.length) (lotEv[e.lot] = lotEv[e.lot] || []).push(e);
   for (const list of Object.values(lotEv)) {
     list.sort((a, b) => a.d - b.d);
-    const last = { thuoc: -1e9, phan: -1e9, la: -1e9 };
+    const last = { thuoc: -1e9, phan: -1e9, la: -1e9 }; let lastSpray = null;
     for (const e of list) {
+      // a pest found a few days after a pesticide spray on this lot is not sprayed again: the recent spray covers it, keep watching
+      // (only when that spray is of the same kind: insecticide for insects/mites, fungicide for diseases)
+      const covers = x => isPesticide(x.p) && lastSpray.prods.some(y => isPesticide(y.p) && (y.p.id === x.p.id || y.p.loai === x.p.loai));
+      if (e.kind !== "task" && lastSpray && e.d - lastSpray.d < gap.thuoc && e.prods.some(x => isPesticide(x.p)) && e.prods.filter(x => isPesticide(x.p)).every(covers)) {
+        const pk = e.prods.find(x => isPesticide(x.p)).p, prev = (lastSpray.prods.find(y => isPesticide(y.p) && (y.p.id === pk.id || y.p.loai === pk.loai)) || lastSpray.prods[0]).p, ago = fmt(lastSpray.d);
+        e.prods = e.prods.filter(x => !isPesticide(x.p));
+        for (const x of e.pests) if (x.p && isPesticide(x.p)) { delete x.p; x.meas = [`Đã phun ${prev.ten} ngày ${ago}; theo dõi mật độ, chưa phun lại (đủ giãn cách)`, `已于${ago}喷施${prev.ten}；继续监测，暂不重复喷药`]; }
+        e.vn = e.vn.replace(/; phun thuốc trừ .*$/, ""); e.cn = e.cn.replace(/；喷药防治.*$/, "");
+        e.nk = e.found.length ? "non" : e.nk; e.covered = true;
+        if (!e.prods.length) continue;
+      }
       const gs = [...new Set(e.prods.map(x => prodGroup(x.p)).filter(Boolean))];
       let need = -1e9;
       for (const gg of gs) { need = Math.max(need, last[gg] + gap[gg]); if (gg === "thuoc") need = Math.max(need, last.la + xl); if (gg === "la") need = Math.max(need, last.thuoc + xl); }
       if (e.d < need) { if (e.kind === "task" && !e.dateEd) { e.shifted = need - e.d; e.d = need; } else e.tooClose = true; }
       for (const gg of gs) last[gg] = Math.max(last[gg], e.d);
+      if (e.prods.some(x => isPesticide(x.p))) lastSpray = e;
     }
   }
   for (const e of events) {
@@ -1774,6 +1805,10 @@ const Q_PH = [
   ["gs", "果园田间管理农事日志、有害生物监测设备及日常监测记录", "Nhật ký công việc nông nghiệp, thiết bị giám sát sâu bệnh và hồ sơ giám sát", "Field work logs, pest monitoring equipment and monitoring records", "bẫy pheromone, bẫy dính tại vườn; sổ nhật ký canh tác, nhật ký ra vào vườn", "性诱捕器、粘虫板；农事及出入记录本"],
   ["dt", "开展有害生物防治培训图片、证明、记录", "Đào tạo kiểm soát sâu bệnh: hình ảnh, chứng chỉ và tài liệu", "Pest control training: images, certificates and documentation", "buổi tập huấn, bảng thông báo sinh vật gây hại tại vườn, giấy chứng nhận", "培训现场、有害生物公告牌、证书"],
 ];
+// short captions for the photo appendix: a caption that is only a camera/app file name is replaced by the group's short name
+const Q_PH_SHORT = { sat: ["Vị trí vùng trồng", "种植区位置"], drone: ["Ảnh flycam vùng trồng", "无人机航拍"], kho: ["Kho chứa vật tư", "农资仓库"], thu: ["Thu hoạch", "采收"], gs: ["Giám sát sâu bệnh", "病虫害监测"], dt: ["Tập huấn", "培训"] };
+function isFileCap(c) { const t = String(c || "").trim(); return !t || /\d{8,}|[0-9a-f]{12,}/i.test(t) || /\.(jpe?g|png|heic|webp)$/i.test(t) || /^(img|dsc|dscn|image|photo|pxl|screenshot|z)[\s\d]*$/i.test(t) || (t.length > 50 && t.split(/\s+/).length < 4); }
+function shortCap(c, fb) { const t = String(c || "").trim(); if (isFileCap(t)) return fb; return t.length > 70 ? t.slice(0, 67).trim() + "…" : t; }
 const Q_PH_DESC = { kho: "pKho", thu: "pThuHoach", gs: "pGiamSat", dt: "pDaoTao" };
 const PHOTO_BUF = {};   // photo id -> ArrayBuffer (for the export)
 const LOCAL_PH = {};    // region id -> group -> photos kept only while the page is open (no photo storage)
@@ -1798,7 +1833,8 @@ async function addPhotos(r, g, files, quiet) {
     if (!/^image\//.test(f.type)) { failed.push(f.name); continue; }
     try {
       const { blob, w, h: hh } = await shrinkImage(f);
-      const cap = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/^(img|dsc|image|photo|z\d+)\s*\d*$/i, "").trim();
+      let cap = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/^(img|dsc|image|photo|z\d+)\s*\d*$/i, "").trim();
+      if (isFileCap(cap)) cap = "";
       if (assets) {
         const up = await assets.upload(blob);
         PHOTO_BUF[up.id] = await blob.arrayBuffer();
@@ -1924,10 +1960,13 @@ function buildQ(r, cfg, plan, from, to) {
     let w = PX(maxWcm), hh = Math.round(w * (p.h || 3) / (p.w || 4)); if (hh > PX(maxHcm)) { hh = PX(maxHcm); w = Math.round(hh * (p.w || 4) / (p.h || 3)); }
     return new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { after: 20 }, children: [new D.ImageRun({ data: buf, transformation: { width: w, height: hh } })] });
   };
+  let figN = 0;   // pictures numbered Hình 1, 2, 3… through the appendices
   const photoBlock = (n, g, vnHint, cnHint) => {
     const ps = photosOf(r, g);
     if (!ps.length) return [ph(vnHint, cnHint)];
-    const capOf = (p, i) => para(`Hình ${n}.${i + 1} / 图${n}.${i + 1}${p.cap ? ": " + p.cap : ""}`, { s: 9, i: true, al: "c", after: 4 });
+    const fb = Q_PH_SHORT[g] || ["Hình ảnh minh họa", "示意图"];
+    const nums = ps.map(() => ++figN);
+    const capOf = (p, i) => { const c = shortCap(p.cap, ""); return para(`Hình ${nums[i]} / 图${nums[i]}: ${c || `${fb[0]} / ${fb[1]}`}`, { s: 9, i: true, al: "c", after: 4 }); };
     if (ps.length === 1) return [imgPara(ps[0], 14, 10), capOf(ps[0], 0)];
     const HW = Math.floor(W / 2), rows = [];
     for (let i = 0; i < ps.length; i += 2) rows.push(new D.TableRow({ cantSplit: true, children: [0, 1].map(j => { const p = ps[i + j]; return cell(p ? [imgPara(p, 8.2, 6.2), capOf(p, i + j)] : [para("")], HW, { nob: true, va: D.VerticalAlign.TOP }); }) }));
@@ -1956,7 +1995,7 @@ function buildQ(r, cfg, plan, from, to) {
     ch.push(new D.Table({ columnWidths: [QW, W - QW], layout: D.TableLayoutType.FIXED, width: { size: W, type: D.WidthType.DXA }, borders: D.TableBorders.NONE, rows: [new D.TableRow({ cantSplit: true, children: [
       cell([PHOTO_BUF.__qr ? new D.Paragraph({ alignment: D.AlignmentType.CENTER, children: [new D.ImageRun({ data: PHOTO_BUF.__qr, transformation: { width: PX(4), height: PX(4) } })] }) : para("[QR]", { al: "c", c: "C00000" })], QW, { nob: true, va: D.VerticalAlign.CENTER }),
       cell([para("电子日志链接 / Link nhật ký điện tử:", { s: 10, b: true, after: 2 }), new D.Paragraph({ spacing: { after: 40 }, children: [new D.ExternalHyperlink({ link: r.nkLink, children: [new D.TextRun({ text: r.nkLink, style: "Hyperlink", color: "1F6FB2", underline: {}, size: 19, font: TNR })] })] }),
-        para(`Hình ${Q_PH.length + 1}.1 / 图${Q_PH.length + 1}.1: Mã QR nhật ký điện tử / 电子日志二维码`, { s: 9, i: true, after: 0 })], W - QW, { nob: true, va: D.VerticalAlign.CENTER })] })] }));
+        para(`Hình ${++figN} / 图${figN}: Mã QR nhật ký điện tử / 电子日志二维码`, { s: 9, i: true, after: 0 })], W - QW, { nob: true, va: D.VerticalAlign.CENTER })] })] }));
   }
   }
   // appendix 2: satellite images of every lot with its boundary
@@ -1969,7 +2008,7 @@ function buildQ(r, cfg, plan, from, to) {
       const ps = photosOf(r, lotKey(l));
       const info = [para(`${j + 1}. 农户 / Chủ hộ: ${l.chu || "–"}`, { s: 10, b: true, after: 2 }), para(`面积 / Diện tích: ${vnNum(num(l.dienTich))} ha`, { s: 9.5, after: 2 }),
         para(`株数 / Số cây: ${l.soCay || "–"}`, { s: 9.5, after: 2 }), para(`坐标 / Tọa độ: ${l.toaDo || "–"}`, { s: 9, after: 2 })];
-      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình 2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""} / 图2.${j + 1}${ps.length > 1 ? "." + (i + 1) : ""}: ${String(p.cap || "").replace(/ lô .+? – /, " – ") || `Ảnh vệ tinh – ${l.chu}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
+      const pics = ps.length ? ps.flatMap((p, i) => [imgPara(p, 11.4, 8), para(`Hình ${++figN} / 图${figN}: ${shortCap(String(p.cap || "").replace(/ lô .+? – /, " – "), "") || `Ảnh vệ tinh – ${l.chu}`}`, { s: 8.5, i: true, al: "c", after: 4 })])
         : [para(`[Chèn ảnh vệ tinh vườn hộ ${l.chu} có ranh giới]`, { s: 9.5, i: true, al: "c", c: "C00000", before: 22, after: 0 }), para(`[插入农户${l.chu}地块卫星图]`, { s: 9, i: true, al: "c", c: "C00000", after: 22 })];
       return new D.TableRow({ cantSplit: true, children: [cell(info, IW, { va: D.VerticalAlign.CENTER }), cell(pics, PW, { va: D.VerticalAlign.CENTER })] });
     });
