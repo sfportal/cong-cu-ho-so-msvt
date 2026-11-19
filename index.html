@@ -1606,9 +1606,12 @@ function qAuto(r, cfg, plan, from, to) {
   A.sinhVatLy = [`Treo bẫy pheromone theo dõi ruồi đục quả, bẫy dính màu; bảo vệ thiên địch; cắt bỏ, tiêu hủy cành, trái bị hại${bio.length ? `; dùng chế phẩm sinh học: ${bio.map(p => p.ten).join(", ")}` : ""}.`,
     `悬挂性诱捕器监测果实蝇、色板诱杀；保护天敌；剪除并销毁受害枝果${bio.length ? `；使用生物制剂：${bio.map(p => p.ten).join("、")}` : ""}。`,
     `Pheromone traps for fruit fly monitoring and colored sticky traps; protect natural enemies; prune and destroy infested branches and fruit${bio.length ? `; biological products: ${bio.map(p => p.ten).join(", ")}` : ""}.`];
-  A.hoaHoc = [`Chỉ dùng thuốc BVTV trong Danh mục được phép sử dụng tại Việt Nam và đáp ứng quy định của GACC${chem.length ? ` (như ${chem.map(p => p.ten).join(", ")})` : ""}; phun theo nguyên tắc 4 đúng và đảm bảo thời gian cách ly trước thu hoạch.`,
-    `仅使用越南许可目录内且符合海关总署要求的农药${chem.length ? `（如${chem.map(p => p.ten).join("、")}）` : ""}；按“四正确”原则施药并严格遵守采前安全间隔期。`,
-    `Only plant protection products permitted in Vietnam and compliant with GACC regulations are used${chem.length ? ` (e.g., ${chem.map(p => p.ten).join(", ")})` : ""}; spraying follows the "4 Right Principles" with pre-harvest intervals strictly observed.`];
+  // pesticide names only: drop the foliar fertilizers mixed in the same tank ("Yapoko 250SC + PBL 30-10-10" -> "Yapoko 250SC")
+  const FERT_TOK = /^(pbl|npk|phân|amino|rb|ca-?bo|compi|humic|vi lượng|trung vi lượng|kali|lân|đạm|urê|ure|bo|canxi)\b|\d+-\d+-\d+/i;
+  const chemN = [...new Set(chem.flatMap(p => String(p.ten).split(/\s+\+\s+/).map(t => t.trim()).filter((t, i) => t && (i === 0 || !FERT_TOK.test(t)))))];
+  A.hoaHoc = [`Chỉ dùng thuốc BVTV trong Danh mục được phép sử dụng tại Việt Nam và đáp ứng quy định của GACC${chemN.length ? ` (như ${chemN.join(", ")})` : ""}; phun theo nguyên tắc 4 đúng và đảm bảo thời gian cách ly trước thu hoạch.`,
+    `仅使用越南许可目录内且符合海关总署要求的农药${chemN.length ? `（如${chemN.join("、")}）` : ""}；按“四正确”原则施药并严格遵守采前安全间隔期。`,
+    `Only plant protection products permitted in Vietnam and compliant with GACC regulations are used${chemN.length ? ` (e.g., ${chemN.join(", ")})` : ""}; spraying follows the "4 Right Principles" with pre-harvest intervals strictly observed.`];
   const sp = ev.filter(e => e.prods.some(x => isPesticide(x.p)));
   if (sp.length) {
     const a = Math.min(...sp.map(e => e.d)), b = Math.max(...sp.map(e => e.d));
