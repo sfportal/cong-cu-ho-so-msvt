@@ -264,7 +264,7 @@ function defaultConfig(xa) {
     O("v_tt", "s7", 45, "Thấp", "thucong"),
   ];
   return {
-    v: 4, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
+    v: 5, xa, seasonStart: "01/09", lechNgay: 2, canBo: "", minPhi: 15, khoang: [100, 140],
     monitor: { every: 14, start: 7, vn: "Kiểm tra sâu bệnh định kỳ", cn: "定期病虫害检查" },
     survey: { every: 28 },
     spray: { nuoc: 6, binh: 200 },
@@ -335,9 +335,9 @@ function buonHoConfig(xa) {
     T("b5", 15, "phun", "Phun thuốc + phân bón qua lá", "喷施农药+叶面肥", "q_yapoko2", "Thuốc 140 ml/phuy 200 lít; Amino 250 ml/phuy; Canxi Bo 250 ml/phuy"),
     T("b5", 22, "cham", "Tưới nước, kiểm tra bông", "浇水，检查花蕾"),
     T("b5", 23, "phun", "Kiểm tra và xử lý nấm", "检查并处理真菌病害", "q_antracol", "0,5 kg/200 lít"),
-    T("b5", 28, "cham", "Kiểm tra rầy, sâu và nhện đỏ", "检查叶蝉、害虫及红蜘蛛"),
-    T("b5", 34, "phun", "Phun thuốc + phân bón qua lá", "喷施农药+叶面肥", "q_superrex2", "Thuốc 240 ml/phuy 200 lít; Amino 250 ml/phuy; Canxi Bo 250 ml/phuy"),
-    T("b5", 44, "phun", "Tưới nước + kiểm tra, xử lý nấm gốc", "浇水+检查处理根部真菌病害", "q_agri"),
+    T("b5", 26, "cham", "Kiểm tra rầy, sâu và nhện đỏ", "检查叶蝉、害虫及红蜘蛛"),
+    T("b5", 30, "phun", "Phun thuốc + phân bón qua lá", "喷施农药+叶面肥", "q_superrex2", "Thuốc 240 ml/phuy 200 lít; Amino 250 ml/phuy; Canxi Bo 250 ml/phuy"),
+    T("b5", 38, "phun", "Tưới nước + kiểm tra, xử lý nấm gốc", "浇水+检查处理根部真菌病害", "q_agri"),
     T("b6", 0, "cham", "Kiểm tra bông trước xổ nhụy", "开花前检查花蕾"),
     T("b6", 5, "bon", "Bón phân trước xổ nhụy", "开花前施肥", "q_npk12"),
     T("b6", 17, "cham", "Xổ nhụy xong, tưới nước", "开花结束后浇水"),
@@ -929,6 +929,16 @@ function migrateCfg(cfg) {
     }
     cfg.v = 4;
   }
+  if (!(cfg.v >= 5)) {
+    // v5: Quy trình Buôn Hồ – dời 2 lần phun cuối giai đoạn dưỡng bông sớm hơn để không rơi vào lúc xổ nhụy (chỉ khi còn đúng mẫu)
+    if (cfg.mau === "buonho") for (const t of cfg.tasks) if (t.stage === "b5") {
+      const o = num(t.offset);
+      if (t.prod === "q_superrex2" && o === 34) t.offset = 30;
+      else if (t.prod === "q_agri" && o === 44) t.offset = 38;
+      else if (t.kind === "cham" && o === 28 && /^Kiểm tra rầy/.test(t.vn)) t.offset = 26;
+    }
+    cfg.v = 5;
+  }
   return cfg;
 }
 function planLots(r) {
@@ -1090,13 +1100,23 @@ function buildPlan(r, cfg, year, span) {
   for (const e of events) if (!e.deleted && !e.into && e.prods.length) (lotEv[e.lot] = lotEv[e.lot] || []).push(e);
   for (const list of Object.values(lotEv)) {
     list.sort((a, b) => a.d - b.d);
-    const last = { thuoc: -1e9, phan: -1e9, la: -1e9 };
+    const last = { thuoc: -1e9, phan: -1e9, la: -1e9 }; let lastSpray = null;
     for (const e of list) {
+      // a pest found a few days after a pesticide spray on this lot is not sprayed again: the recent spray covers it, keep watching
+      if (e.kind !== "task" && lastSpray && e.d - lastSpray.d < gap.thuoc && e.prods.some(x => isPesticide(x.p))) {
+        const prev = lastSpray.prods.find(x => isPesticide(x.p)).p, ago = fmt(lastSpray.d);
+        e.prods = e.prods.filter(x => !isPesticide(x.p));
+        for (const x of e.pests) if (x.p && isPesticide(x.p)) { delete x.p; x.meas = [`Đã phun ${prev.ten} ngày ${ago}; theo dõi mật độ, chưa phun lại (đủ giãn cách)`, `已于${ago}喷施${prev.ten}；继续监测，暂不重复喷药`]; }
+        e.vn = e.vn.replace(/; phun thuốc trừ .*$/, ""); e.cn = e.cn.replace(/；喷药防治.*$/, "");
+        e.nk = e.found.length ? "non" : e.nk; e.covered = true;
+        if (!e.prods.length) continue;
+      }
       const gs = [...new Set(e.prods.map(x => prodGroup(x.p)).filter(Boolean))];
       let need = -1e9;
       for (const gg of gs) { need = Math.max(need, last[gg] + gap[gg]); if (gg === "thuoc") need = Math.max(need, last.la + xl); if (gg === "la") need = Math.max(need, last.thuoc + xl); }
       if (e.d < need) { if (e.kind === "task" && !e.dateEd) { e.shifted = need - e.d; e.d = need; } else e.tooClose = true; }
       for (const gg of gs) last[gg] = Math.max(last[gg], e.d);
+      if (e.prods.some(x => isPesticide(x.p))) lastSpray = e;
     }
   }
   for (const e of events) {
