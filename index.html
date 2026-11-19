@@ -362,7 +362,7 @@ function buonHoConfig(xa) {
     T("b9", 0, "cham", "Ngưng thuốc BVTV và phân bón; theo dõi độ già trái", "停止使用农药和肥料；监测果实成熟度"),
     // thu hoạch tháng 9–10 theo mùa vụ FarmBase (nhật ký mẫu chưa có dòng thu hoạch)
     T("b9", 15, "thu", "Thu hoạch trái đạt độ chín, cắt cuống đúng kỹ thuật", "采收达到成熟度的果实，按技术要求剪果柄"),
-    T("b9", 40, "thu", "Phân loại, sơ chế, bảo quản trái nơi thoáng mát; vệ sinh dụng cụ thu hoạch", "果实分级、初加工并于阴凉处存放；清洁采收工具"),
+    T("b9", 17, "thu", "Phân loại, sơ chế, bảo quản trái nơi thoáng mát; vệ sinh dụng cụ thu hoạch", "果实分级、初加工并于阴凉处存放；清洁采收工具"),
   ];
   const base = defaultConfig(xa);
   const pmap = { v_heo: "q_coc", v_phy: "q_agri", v_rs: "q_movento", v_rsb: "q_movento", v_rst: "q_movento", v_ray: "q_yapoko", v_sdt: "q_actimax", v_sal: "q_actimax", v_sab: "q_actimax", v_tt: "q_antracol", v_rhi: "q_antracol" };
@@ -834,6 +834,13 @@ function layStages(list, start, end) {
   });
   return out;
 }
+// days from the harvest task to the end of the last stage: a harvest date typed by the user = the "Thu hoạch" task date,
+// so the season (last stage) ends this many days later (post-harvest sorting, checks)
+function harvestTail(cfg) {
+  const last = cfg.stages[cfg.stages.length - 1]; if (!last) return 0;
+  const offs = cfg.tasks.filter(t => t.kind === "thu" && t.stage === last.id).map(t => Math.round(num(t.offset)));
+  return offs.length ? Math.max(0, Math.round(num(last.days)) - 1 - Math.min(...offs)) : 0;
+}
 const flowerIdx = cfg => { const i = cfg.stages.findIndex(s => s.hoa); return i < 0 ? -1 : i; };
 // season fixed by start/end: stages from flowering to harvest keep their biological length, earlier stages stretch or shrink to fill
 function stagesSpan(cfg, start, end) {
@@ -850,7 +857,7 @@ function stagesSpan(cfg, start, end) {
 // per-lot calendar: the lot's own flowering date and/or harvest-end date move its stages
 function lotStages(cfg, base, lt) {
   const fi = flowerIdx(cfg);
-  const hoa = lt && fromDMY(lt.hoa), thu = lt && fromDMY(lt.thu);
+  const hoa = lt && fromDMY(lt.hoa), thu0 = lt && fromDMY(lt.thu), thu = thu0 == null ? null : thu0 + harvestTail(cfg);
   if (hoa == null && thu == null) return null;
   const S0 = base[0].start, E = base[base.length - 1].end;
   if (fi < 0) return thu != null && thu > S0 + 60 ? layStages(cfg.stages, S0, thu) : null;
@@ -918,6 +925,7 @@ function migrateCfg(cfg) {
       const old = ["v_phy|b2|11|Thấp|hoa|", "v_nhen|b3|4|Trung bình|hoa|", "v_rayx|b5|28|Thấp|thucong|", "v_phy|b8|5|Trung bình|hoa|"];
       if ((cfg.occ || []).map(sig).join(";") === old.join(";")) cfg.occ = buonHoConfig(cfg.xa).occ;
       if (num(cfg.lechNgay) === 2) cfg.lechNgay = 6;
+      for (const t of cfg.tasks) if (t.stage === "b9" && t.kind === "thu" && /^Phân loại/.test(t.vn) && num(t.offset) === 40) t.offset = 17;
     }
     cfg.v = 4;
   }
@@ -994,8 +1002,9 @@ function buildPlan(r, cfg, year, span) {
     for (const t of cfg.tasks) {
       const s = SM[t.stage]; if (!s) continue;
       let d = s.start + Math.round(num(t.offset)), n = 0; const rep = Math.round(num(t.repeat));
+      if (t.kind === "thu" && s === lot.Ls[lot.Ls.length - 1]) d = s.end - (Math.max(1, Math.round(num(s.days))) - 1 - Math.round(num(t.offset)));
       // chăm sóc, bón phân lệch thêm 0–3 ngày theo từng lô để các lô không trùng lịch hoàn toàn (phun và thu hoạch giữ theo quy trình)
-      const jit = lech && ["cham", "bon"].includes(t.kind) && !own ? Math.floor(hash01(`${lot.k}|${t.id}`) * 4) : 0;
+      const jit = (lech || own) && ["cham", "bon"].includes(t.kind) ? Math.floor(hash01(`${lot.k}|${t.id}`) * 4) : 0;
       while (d <= s.end) { add({ key: `${lot.k}|t|${t.id}|${n}`, kind: "task", task: t, d: d + shift + jit }); n++; if (!(rep > 0)) break; d += rep; }
     }
     for (let d = sStart + Math.round(num(cfg.monitor.start)) + shift, n = 0; d <= lEnd; d += me, n++)
@@ -1003,7 +1012,7 @@ function buildPlan(r, cfg, year, span) {
     for (const o of cfg.occ) {
       const s = SM[o.stage], pest = V[o.pest]; if (!s || !pest || pest.trap) continue;
       if (!lotsOf(o, r).includes(lot.ma)) continue;
-      const oj = lech && !own ? Math.floor(hash01(`${lot.k}|o|${o.id}`) * 7) - 3 : 0;
+      const oj = lech || own ? Math.floor(hash01(`${lot.k}|o|${o.id}`) * 7) - 3 : 0;
       add({ key: `${lot.k}|o|${o.id}`, kind: "pest", occ: o, pest, d: s.start + Math.round(num(o.offset)) + shift + oj });
     }
   });
@@ -2474,15 +2483,17 @@ function renderXuat() {
   const cfg = migrateCfg(S.communes[xaKey]);
   if (X.year == null || X._rid !== X.rid) { X.year = currentSeasonYear(cfg); X._rid = X.rid; X.from = null; X.to = null; X.lot = ""; X.endD = null; X.prevEnd = null; }
   if (!X.mode) X.mode = "vu";
-  if (X.mode === "kt" && X.endD == null) { const pl = buildPlan(r, cfg, X.year); X.endD = pl.stages[pl.stages.length - 1].end; }
-  const SP = () => X.mode === "kt" ? { start: X.prevEnd != null && X.prevEnd < X.endD - 120 ? X.prevEnd + 1 : X.endD - 364, end: X.endD } : null;
+  const tail = harvestTail(cfg);
+  if (X.mode === "kt" && X.endD == null) { const pl = buildPlan(r, cfg, X.year); X.endD = pl.stages[pl.stages.length - 1].end - tail; }
+  // X.endD, X.prevEnd = ngày thu hoạch (vụ này, vụ trước); vụ kết thúc sau thu hoạch "tail" ngày (sơ chế, kiểm tra sau thu hoạch)
+  const SP = () => X.mode === "kt" ? { start: X.prevEnd != null && X.prevEnd < X.endD - 120 ? X.prevEnd + tail + 1 : X.endD + tail - 364, end: X.endD + tail } : null;
   const YR = () => X.mode === "kt" ? yearOf(SP().start) : X.year;
   const mk = () => buildPlan(r, cfg, YR(), SP());
   let plan = mk();
   if (X.from == null) X.from = plan.sStart;
   if (X.to == null) X.to = Math.min(todayDn(), plan.sEnd);
   const reset = () => { X.from = X.to = null; renderXuat(); };
-  const modeSel = h("select", {}, [["vu", "Theo ngày bắt đầu vụ của xã/phường"], ["kt", "Nhập ngày kết thúc vụ, tự tính ngược"]].map(([v, t]) => h("option", { value: v }, t)));
+  const modeSel = h("select", {}, [["vu", "Theo ngày bắt đầu vụ của xã/phường"], ["kt", "Nhập ngày thu hoạch, tự tính ngược"]].map(([v, t]) => h("option", { value: v }, t)));
   modeSel.value = X.mode; modeSel.addEventListener("change", () => { X.mode = modeSel.value; X.endD = null; X.prevEnd = null; reset(); });
   const seasonCtl = [];
   if (X.mode === "vu") {
@@ -2492,9 +2503,9 @@ function renderXuat() {
   } else {
     const endI = dIn(X.endD);
     endI.addEventListener("change", () => { const v = parseD(endI.value); if (v != null) { X.endD = v; X.prevEnd = null; reset(); } });
-    const prevI = dIn(SP().start - 1);
+    const prevI = dIn(SP().start - 1 - tail);
     prevI.addEventListener("change", () => { const v = parseD(prevI.value); if (v != null) { X.prevEnd = v; reset(); } });
-    seasonCtl.push(h("label", { class: "f" }, "Ngày kết thúc vụ (thu hoạch xong)", endI), h("label", { class: "f" }, "Thu hoạch xong vụ trước (tự tính, sửa được)", prevI));
+    seasonCtl.push(h("label", { class: "f" }, "Ngày thu hoạch vụ này", endI), h("label", { class: "f" }, "Ngày thu hoạch vụ trước (tự tính, sửa được)", prevI));
   }
   const fromI = dIn(X.from), toI = dIn(X.to);
   // typing a date that belongs to another season switches the season to it (only when the season follows the commune's start date)
@@ -2660,17 +2671,17 @@ function renderXuat() {
     const mkI = k => { const v = fromDMY(cur[k]); const i = dIn(v);
       i.addEventListener("change", () => { const o = lotEd(); const x = { ...(o[l.k] || {}) }; const d = parseD(i.value); if (d == null && i.value.trim()) return; if (d != null) x[k] = fmt(d); else delete x[k];
         if (Object.keys(x).length) o[l.k] = x; else delete o[l.k]; saveEd(); renderXuat(); }); return i; };
-    const fl = l.Ls.find(s => s.hoa), last = l.Ls[l.Ls.length - 1];
+    const fl = l.Ls.find(s => s.hoa), last = l.Ls[l.Ls.length - 1], tailL = harvestTail(cfg);
     const bad = (cur.hoa || cur.thu) && !l.own;
     return h("tr", {}, h("td", {}, l.ma), h("td", {}, l.chu), h("td", {}, String(l.soCay || "–")),
       h("td", {}, l.age == null ? "–" : `${l.age} năm (× ${String(l.f).replace(".", ",")})`),
       h("td", {}, mkI("hoa")), h("td", {}, mkI("thu")),
       h("td", { class: bad ? "miss" : "" }, bad ? "Ngày không hợp lệ (ra hoa phải sau đầu vụ > 30 ngày, thu hoạch sau ra hoa > 30 ngày)" :
-        `${fl ? `Ra hoa ${fmt(fl.start)}; ` : ""}thu hoạch ${fmt(last.start)} – ${fmt(last.end)}${l.own ? "" : " (lịch chung)"}`));
+        `${fl ? `Ra hoa ${fmt(fl.start)}; ` : ""}thu hoạch ${fmt(last.end - tailL)}; kết thúc vụ ${fmt(last.end)}${l.own ? "" : " (lịch chung)"}`));
   }));
   el.append(h("div", { class: "card" }, h("h2", {}, "Ngày ra hoa, thu hoạch của từng lô (vụ này)"),
-    h("p", { class: "muted" }, "Mỗi vườn ra hoa và thu hoạch khác nhau. Nhập ngày hoa nở (xả nhụy) hoặc ngày thu hoạch xong thực tế của lô; công cụ dời các giai đoạn, công việc, lần kiểm tra và sâu bệnh của lô theo ngày đó. Chỉ nhập một ngày thì giữ nguyên thời gian từ hoa đến thu hoạch. Để trống = theo lịch chung. Lượng phân, nước phun tính theo tuổi cây (năm trồng) và số cây của lô."),
-    h("div", { class: "tw" }, h("table", { class: "t" }, h("thead", {}, h("tr", {}, ["Mã lô", "Chủ lô", "Số cây", "Tuổi cây (hệ số)", "Ngày hoa nở", "Ngày thu hoạch xong", "Lịch của lô"].map(t => h("th", {}, t)))), calTb))));
+    h("p", { class: "muted" }, "Mỗi vườn ra hoa và thu hoạch khác nhau. Nhập ngày hoa nở (xả nhụy) hoặc ngày thu hoạch thực tế của lô (ngày cắt trái); công cụ dời các giai đoạn, công việc, lần kiểm tra và sâu bệnh của lô theo ngày đó. Chỉ nhập một ngày thì giữ nguyên thời gian từ hoa đến thu hoạch. Để trống = theo lịch chung. Lượng phân, nước phun tính theo tuổi cây (năm trồng) và số cây của lô."),
+    h("div", { class: "tw" }, h("table", { class: "t" }, h("thead", {}, h("tr", {}, ["Mã lô", "Chủ lô", "Số cây", "Tuổi cây (hệ số)", "Ngày hoa nở", "Ngày thu hoạch", "Lịch của lô"].map(t => h("th", {}, t)))), calTb))));
 
   // ---- products each household actually bought
   const owners = [...new Map(plan.lots.map(l => [hoKey(l.chu), l.chu])).entries()];
