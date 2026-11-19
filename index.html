@@ -388,7 +388,7 @@ function buonHoOcc(O) {
     O("v_rayx", "b5", 12, "Thấp", "thucong"),
     L(O("v_nhen", "b5", 30, "Thấp", "thucong"), "60%"),
     O("v_tt", "b7", 40, "Thấp", "thucong"),
-    O("v_phy", "b8", 5, "Trung bình", "hoa"),
+    O("v_phy", "b8", 2, "Trung bình", "hoa"),
     L(O("v_phy", "b8", 30, "Thấp", "thucong"), "50%"),
   ];
 }
@@ -937,6 +937,7 @@ function migrateCfg(cfg) {
       else if (t.prod === "q_agri" && o === 44) t.offset = 38;
       else if (t.kind === "cham" && o === 28 && /^Kiểm tra rầy/.test(t.vn)) t.offset = 26;
     }
+    if (cfg.mau === "buonho") for (const o of cfg.occ || []) if (o.pest === "v_phy" && o.stage === "b8" && num(o.offset) === 5 && o.xuLy === "hoa") o.offset = 2;
     cfg.v = 5;
   }
   return cfg;
@@ -1036,6 +1037,14 @@ function buildPlan(r, cfg, year, span) {
     if (ed.fly != null && ed.fly !== "") e.flyEd = Math.max(0, Math.round(num(ed.fly)));
     if (e.kind === "mon") e.entered = !!(ed.obs || e.flyEd != null);
   }
+  // template occurrences follow the stage, but a pest only shows up in its usual months: when the back-calculated calendar puts one
+  // outside them, move it to the nearest in-season day (up to 45 days, same season); if none, the lot does not get it this season
+  for (const e of events) {
+    if (e.kind !== "pest" || e.deleted || e.dateEd || !e.pest.thang || inMonths(e.pest.thang, monthOf(e.d)) && inMonths(e.pest.thang, monthOf(e.d + 14))) continue;
+    let best = null;
+    for (let k = 0; k <= 45 && best == null; k++) for (const d of [e.d - k, e.d + k]) if (best == null && d >= sStart && d + 14 <= sEnd && inMonths(e.pest.thang, monthOf(d)) && inMonths(e.pest.thang, monthOf(d + 14))) best = d;
+    if (best == null) e.deleted = true; else { e.d = best; e.seasonMoved = true; }
+  }
   // region setting: checks done up to today with nothing entered count as "nothing found, 0 flies" (the user confirmed this once for the region)
   if (r.monNo) { const t = todayDn(); for (const e of events) if (e.kind === "mon" && !e.entered && !e.deleted && e.d <= t) { e.obs = {}; e.flyEd = 0; e.entered = true; e.autoNo = true; } }
   // other past checks with nothing entered take the result the process formula generates (template pests, 0 flies); shown as a warning, never blocks export
@@ -1103,8 +1112,10 @@ function buildPlan(r, cfg, year, span) {
     const last = { thuoc: -1e9, phan: -1e9, la: -1e9 }; let lastSpray = null;
     for (const e of list) {
       // a pest found a few days after a pesticide spray on this lot is not sprayed again: the recent spray covers it, keep watching
-      if (e.kind !== "task" && lastSpray && e.d - lastSpray.d < gap.thuoc && e.prods.some(x => isPesticide(x.p))) {
-        const prev = lastSpray.prods.find(x => isPesticide(x.p)).p, ago = fmt(lastSpray.d);
+      // (only when that spray is of the same kind: insecticide for insects/mites, fungicide for diseases)
+      const covers = x => isPesticide(x.p) && lastSpray.prods.some(y => isPesticide(y.p) && (y.p.id === x.p.id || y.p.loai === x.p.loai));
+      if (e.kind !== "task" && lastSpray && e.d - lastSpray.d < gap.thuoc && e.prods.some(x => isPesticide(x.p)) && e.prods.filter(x => isPesticide(x.p)).every(covers)) {
+        const pk = e.prods.find(x => isPesticide(x.p)).p, prev = (lastSpray.prods.find(y => isPesticide(y.p) && (y.p.id === pk.id || y.p.loai === pk.loai)) || lastSpray.prods[0]).p, ago = fmt(lastSpray.d);
         e.prods = e.prods.filter(x => !isPesticide(x.p));
         for (const x of e.pests) if (x.p && isPesticide(x.p)) { delete x.p; x.meas = [`Đã phun ${prev.ten} ngày ${ago}; theo dõi mật độ, chưa phun lại (đủ giãn cách)`, `已于${ago}喷施${prev.ten}；继续监测，暂不重复喷药`]; }
         e.vn = e.vn.replace(/; phun thuốc trừ .*$/, ""); e.cn = e.cn.replace(/；喷药防治.*$/, "");
