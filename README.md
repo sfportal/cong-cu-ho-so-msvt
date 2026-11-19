@@ -13,8 +13,8 @@ Công cụ chạy trên trình duyệt, không cần cài đặt, để lập b�
 
 ## Mẫu quy trình có sẵn
 
-- Quy trình Đắk Lắk: vụ từ 01/09, 8 giai đoạn (mặc định).
-- Quy trình Buôn Hồ: vụ từ 01/11, 9 giai đoạn theo nhật ký HTX Đoàn Kết Buôn Hồ; tự áp dụng cho vùng ở Buôn Hồ.
+- Quy trình Buôn Hồ (mẫu chuẩn, mặc định cho mọi xã/phường): vụ từ 01/11, 9 giai đoạn theo nhật ký HTX Đoàn Kết Buôn Hồ. Tên thuốc, hoạt chất, đối tượng và cách ly (14 ngày) theo góp ý chuyên gia 19/11/2026.
+- Quy trình Đắk Lắk: vụ từ 01/09, 8 giai đoạn.
 
 Chọn ở tab 2, ô "Áp dụng mẫu quy trình…".
 
