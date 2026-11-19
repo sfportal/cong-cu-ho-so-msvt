@@ -1369,10 +1369,17 @@ function buildDocs(r, cfg, plan, from, to) {
       ch.push(tbl([["STT", "序号"], ["Mã bẫy", "诱捕器编号"], ["Loại bẫy", "诱捕器类型"], ["Vị trí đặt", "放置位置"], ["Tọa độ GPS", "坐标"], ["Ghi chú", "备注"]],
         traps.map((t, k) => [String(k + 1), t.code, bi(t.vn, t.cn), bi(t.pos, t.posCn), l.toaDo || "–", "Tọa độ GPS của lô; treo cao 1,5 m / 采用地块坐标；悬挂高度1.5米"]), [1, 2.8, 5, 4, 4.5, 5], 8.5, [0, 1]));
       ch.push(para("2. Kiểm tra bẫy / 诱捕器检查记录", { s: 10.5, b: true, before: 6, after: 2 }));
-      const rows = []; let k = 0;
-      for (const e of byLot(l.k).filter(e => e.kind === "mon")) {
+      const rows = []; let k = 0, prevD = -Infinity;
+      const lotEv = byLot(l.k);
+      for (const e of lotEv.filter(e => e.kind === "mon")) {
         const ns = traps.map(t => t.fly ? (e.fly == null ? "" : String(e.fly)) : "–"); k++;
-        rows.push([String(k), fmt(e.d), traps.map(t => `${t.code}: ${t.vn}`), ns, "–",
+        // bẫy dính vàng/xanh: ghi các loài rầy, bọ trĩ đã ghi nhận ở lô trong kỳ kiểm tra này (lấy từ nhật ký, không tự thêm)
+        const caught = new Map();
+        if (traps.some(t => !t.fly)) for (const x of lotEv) if (x.d > prevD && x.d <= e.d) for (const f of (x.found || []))
+          if (/rầy|bọ trĩ/i.test(f.v.vn) && !caught.has(f.v.id)) caught.set(f.v.id, f);
+        prevD = e.d;
+        const other = caught.size ? [[...caught.values()].map(f => `${f.v.vn} ${(MUC_M[f.muc] || MUC[0])[2]}`).join("; "), [...caught.values()].map(f => `${f.v.cn} ${(MUC_M[f.muc] || MUC[0])[2]}`).join("；")] : "–";
+        rows.push([String(k), fmt(e.d), traps.map(t => `${t.code}: ${t.vn}`), ns, other,
           e.fly == null ? "" : e.fly > 0 ? ["Phát hiện ruồi đục quả: thay mồi, vệ sinh khu vực, báo cán bộ BVTV", "发现果实蝇：更换诱芯，清洁周边，报告植保人员"] : ["Không phát hiện ruồi đục quả, bẫy hoạt động bình thường", "未发现果实蝇，诱捕器正常"], e.person]);
       }
       ch.push(rows.length ? tbl([["STT", "序号"], ["Ngày kiểm tra", "检查日期"], ["Mã – loại bẫy", "诱捕器"], ["Số ruồi đục quả", "果实蝇数量"], ["Sinh vật khác bắt được", "其他捕获生物"], ["Biện pháp xử lý", "处理措施"], ["Người điều tra", "调查人"]],
