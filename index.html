@@ -2399,22 +2399,30 @@ function dIn(n, w = 110) {
 }
 /* ============================================================ FarmBase logbook import file (NKCT) */
 const FB_HEAD = ["ID", "Nông dân", "Số điện thoại", "Ngày", "Giai đoạn", "SVGH", "Biện pháp", "Loại phân thuốc", "Tên phân thuốc", "Hoạt chất", "Liều Lượng", "Cách ly", "Mã truy xuất", "Công việc", "Lô đất"];
+const FB_HEAD_FULL = ["ID (để trống khi thêm mới)", "Nông dân", "Số điện thoại (bắt buộc)", "Ngày (bắt buộc, dd-MM-yyyy)", "Giai đoạn (bắt buộc, tối đa 50 ký tự)", "SVGH (tối đa 50 ký tự)", "Biện pháp (tối đa 50 ký tự)", "Loại phân thuốc (PESTICIDE, FERTILIZER, GROWTH_REGULATOR hoặc OTHER)", "Tên phân thuốc", "Hoạt chất (tối đa 50 ký tự)", "Liều Lượng (tối đa 50 ký tự)", "Cách ly (tối đa 50 ký tự)", "Mã truy xuất", "Công việc (bắt buộc, tối đa 200 ký tự)", "Lô đất (mã lô đất của nông dân, có thể để trống)"];
+// FarmBase import limits (characters) per column index of FB_HEAD
+const FB_MAX = { 4: 50, 5: 50, 6: 50, 9: 50, 10: 50, 11: 50, 13: 200 };
+const fbHeadKey = t => norm(String(t).replace(/\s*\(.*$/, ""));
+const fbCut = (t, n) => { t = String(t ?? "").replace(/\s+/g, " ").trim(); if (t.length <= n) return t; t = t.replace(/\s*[（(][^)）]*[)）]/g, ""); if (t.length <= n) return t; const c = t.slice(0, n - 1); const sp = c.lastIndexOf(" "); return (sp > n * 0.6 ? c.slice(0, sp) : c).replace(/[\s,;:–-]+$/, "") + "…"; };
+const fbProdKey = t => norm(t).replace(/[^a-z0-9]/g, "");
 const FB_SHEET = "Nhật ký canh tác";
 const FB_BASE = {}; // region id -> parsed FarmBase export (kept for this session only)
 const fbDate = n => dmy(n);
 function fbParse(wb, fileName) {
   const ws = wb.Sheets[FB_SHEET]; if (!ws) throw new Error(`File không có sheet “${FB_SHEET}”. Hãy dùng file nhật ký canh tác xuất từ FarmBase (NKCT_….xlsx).`);
   const aoa = (s, raw = false) => wb.Sheets[s] ? XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1, raw, defval: "" }) : [];
-  const main = aoa(FB_SHEET), head = main[0].map(x => String(x).trim());
-  const miss = FB_HEAD.filter(c => !head.includes(c)); if (miss.length) throw new Error(`Sheet nhật ký thiếu cột: ${miss.join(", ")}.`);
-  const rows = main.slice(1).filter(r => r.some(v => String(v).trim())).map(r => FB_HEAD.map(c => String(r[head.indexOf(c)] ?? "").trim()));
+  const main = aoa(FB_SHEET), headRaw = main[0].map(x => String(x).trim()), head = headRaw.map(fbHeadKey);
+  // newer FarmBase files describe each column in the header ("Số điện thoại (bắt buộc)"): match on the part before the bracket
+  const idx = FB_HEAD.map(c => head.indexOf(fbHeadKey(c)));
+  const miss = FB_HEAD.filter((c, i) => idx[i] < 0); if (miss.length) throw new Error(`Sheet nhật ký thiếu cột: ${miss.join(", ")}.`);
+  const rows = main.slice(1).filter(r => r.some(v => String(v).trim())).map(r => idx.map(i => String(r[i] ?? "").trim()));
   const conf = aoa("Cấu hình").slice(1).filter(r => r[0]);
   const C = Object.fromEntries(conf.map(r => [String(r[0]).trim(), String(r[1] ?? "").trim()]));
   // merged cells: a farmer row may cover several lots, carry the name down
   let last = ["", ""]; const lots = aoa("Lô đất").slice(1).filter(r => r[2]).map(r => { if (String(r[0]).trim()) last = [String(r[0]).trim(), String(r[1]).trim()]; return { ten: last[0], sdt: last[1], ma: String(r[2]).trim(), dt: r[3] }; });
   const prods = aoa("Phân thuốc").slice(1).filter(r => r[1]).map(r => r.slice(0, 6).map(v => String(v ?? "").trim()));
   const codes = aoa("Mã truy xuất").slice(1).filter(r => r[0]).map(r => r.slice(0, 3).map(v => String(v ?? "").trim()));
-  return { fileName, rows, conf, C, lots, prods, codes, sheets: { "Phân thuốc": aoa("Phân thuốc", true), "Mã truy xuất": aoa("Mã truy xuất", true), "Lô đất": aoa("Lô đất", true) } };
+  return { fileName, head: idx.map(i => headRaw[i]), rows, conf, C, lots, prods, codes, sheets: { "Phân thuốc": aoa("Phân thuốc", true), "Mã truy xuất": aoa("Mã truy xuất", true), "Lô đất": aoa("Lô đất", true) } };
 }
 const FB_CODES = [["FERTILIZER", "Phân bón gốc động thực vật", "31.01"], ["FERTILIZER", "Phân đạm", "31.02"], ["FERTILIZER", "Phân lân", "31.03"], ["FERTILIZER", "Phân kali", "31.04"], ["FERTILIZER", "Phân bón khác", "31.05"], ["PESTICIDE", "Thuốc trừ côn trùng", "3808.91"], ["PESTICIDE", "Thuốc trừ nấm", "3808.92"], ["PESTICIDE", "Thuốc diệt cỏ, chống nẩy mầm", "3808.93"], ["GROWTH_REGULATOR", "Chất điều hòa sinh trưởng cây trồng", "3808.93"], ["OTHER", "Thuốc khử trùng", "3808.94"], ["PESTICIDE", "Thuốc khác", "3808.99"], ["OTHER", "Thuốc khác", "3808.99"]];
 const isGrowthReg = p => /gibberel|\bga3\b|naphthalene|\bnaa\b|paclobutrazol|ethephon|điều hòa sinh trưởng|kích thích sinh trưởng/i.test(`${p.ten} ${p.hoatChat}`);
@@ -2456,6 +2464,11 @@ function buildFarmbase(r, cfg, plan, from, to, base, mode) {
   const byLot = new Map(bLots.map(l => [norm(l.ma), l]));
   const byName = new Map(bLots.filter(l => l.ten).map(l => [norm(l.ten), l])), byHo = new Map(bLots.filter(l => l.ten).map(l => [hoKey(l.ten), l]));
   const bProd = new Map((base ? base.prods : []).map(p => [norm(p[1]), p]));
+  const bProdK = new Map((base ? base.prods : []).map(p => [fbProdKey(p[1]), p]));
+  // catalog match: exact name, then name without spaces/punctuation ("Movento 150 OD" = "Movento 150OD"), then the first product of a tank mix
+  const findProd = name => bProd.get(norm(name)) || bProdK.get(fbProdKey(name)) || bProdK.get(fbProdKey(String(name).split(/\s+\+\s+/)[0])) || null;
+  Object.assign(rep, { skipSeason: 0, cut: new Set(), noPhone: new Set() });
+  const fs0 = base ? fromDMY(base.C["Bắt đầu mùa vụ"]) : null, fs1 = base ? fromDMY(base.C["Kết thúc mùa vụ"]) : null;
   const who = lot => {
     const own = lotOwner(r, lot) || {};
     const b = byLot.get(norm(lot.ma)) || byHo.get(hoKey(lot.chu)) || byHo.get(hoKey(own.ten)) || byName.get(norm(lot.chu)) || byName.get(norm(own.ten));
@@ -2469,21 +2482,34 @@ function buildFarmbase(r, cfg, plan, from, to, base, mode) {
     if (e.d < start || e.d > to) continue;
     if (SL.omit.has(e)) continue;
     if (e.d > end) { rep.skipFuture++; continue; }
+    if ((fs0 != null && e.d < fs0) || (fs1 != null && e.d > fs1)) { rep.skipSeason++; continue; }
     if (e.kind === "pest") continue; // process template detections are not field records
     if (e.kind === "mon" && !e.entered) { rep.skipMon++; continue; }
     if (e.kind === "mon" && !e.found.length && !(e.fly > 0) && !e.prods.length) { /* entered, nothing found: still a real check */ }
     const W = who(e.L), stg = e.stage ? e.stage.vn : ""; rep.stages.add(stg);
     const found = (e.pests || []).filter(x => !x.fly || e.fly > 0);
-    const svgh = e.kind === "mon" ? found.map(x => x.fly ? `${x.v.vn} (${e.fly} con/bẫy)` : `${x.v.vn} (${x.muc})`).join(", ") : "";
+    const shortN = t => String(t).replace(/\s*[（(].*[)）]\s*$/, "");
+    const pTxt = x => x.fly ? `${shortN(x.v.vn)} (${e.fly} con/bẫy)` : `${shortN(x.v.vn)} (${x.muc})`;
+    const svgh = e.kind === "mon" ? found.map(pTxt).join(", ") : "";
     const meas = e.kind === "mon" ? (found.length ? [...new Set(found.map(x => x.meas && x.meas[0]).filter(Boolean))].join("; ") : (e.note[0] || "Kiểm tra định kỳ, không phát hiện bất thường.")) : (e.note[0] || "");
     const common = [W.ten, W.sdt, fbDate(e.d), stg];
-    if (!e.prods.length) out.push(["", ...common, svgh, meas, "", "", "", "", "", "", e.vn, W.lo]);
+    // SVGH holds 50 characters: when several pests were found in one check, one row per pest keeps every name and level
+    if (!e.prods.length) {
+      if (found.length > 1 && svgh.length > FB_MAX[5]) for (const x of found) out.push(["", ...common, pTxt(x), (x.meas && x.meas[0]) || meas, "", "", "", "", "", "", e.vn, W.lo]);
+      else out.push(["", ...common, svgh, meas, "", "", "", "", "", "", e.vn, W.lo]);
+    }
     for (const u of e.prods) {
-      const p = u.p, type = fbType(p), b = bProd.get(norm(p.ten));
+      const p = u.p, type = fbType(p), b = findProd(p.ten);
       const tgt = svgh || (isPesticide(p) ? cfg.pests.filter(v => v.prod === p.id && !v.trap).map(v => v.vn).join(", ") : "");
       if (!b) rep.prodNew.set(norm(p.ten), [type, p.ten, p.hoatChat || "", catalogDose(p) || "Theo nhãn", fbPhi(p), fbCode(p, type, cfg)]);
-      out.push(["", ...common, tgt, meas, b ? b[0] : type, p.ten, p.hoatChat || (b ? b[2] : ""), u.dose || catalogDose(p) || (b && b[3]) || "Theo nhãn", fbPhi(p) || (b ? b[4] : ""), b ? b[5] : fbCode(p, type, cfg), e.vn, W.lo]);
+      out.push(["", ...common, tgt, meas, b ? b[0] : type, b ? b[1] : p.ten, (b && b[2]) || p.hoatChat || "", u.dose || catalogDose(p) || (b && b[3]) || "Theo nhãn", fbPhi(p) || (b ? b[4] : ""), b ? b[5] : fbCode(p, type, cfg), e.vn, W.lo]);
     }
+  }
+  // FarmBase limits: required phone, max lengths
+  for (const x of out) {
+    if (!x[2]) rep.noPhone.add(x[1] || "(không tên)");
+    for (const [c, n] of Object.entries(FB_MAX)) { const v = fbCut(x[c], n); if (v !== String(x[c] ?? "").replace(/\s+/g, " ").trim()) rep.cut.add(FB_HEAD[c]); x[c] = v; }
+    if (!["PESTICIDE", "FERTILIZER", "GROWTH_REGULATOR", "OTHER", ""].includes(x[7])) x[7] = "OTHER";
   }
   let rows = out;
   if (base && mode !== "replace") {
@@ -2502,7 +2528,8 @@ function buildFarmbase(r, cfg, plan, from, to, base, mode) {
     ws["!freeze"] = { xSplit: 0, ySplit: 1 };
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
-  put(FB_SHEET, [FB_HEAD, ...rows], [38, 30, 14, 12, 20, 30, 34, 18, 30, 28, 24, 12, 12, 40, 12], [2, 3, 12]);
+  const headOut = base && base.head ? base.head : FB_HEAD_FULL.map((t, i) => i === 3 && fs0 != null ? t : t);
+  put(FB_SHEET, [headOut, ...rows], [38, 30, 14, 12, 20, 30, 34, 18, 30, 28, 24, 12, 12, 40, 12], [...Array(15).keys()]);
   const prodSheet = base && base.sheets["Phân thuốc"].length ? base.sheets["Phân thuốc"].map(r => r.slice(0, 6)) : [["Loại phân thuốc", "Tên phân thuốc", "Hoạt chất", "Liều Lượng", "Cách ly", "Mã truy xuất"]];
   put("Phân thuốc", [...prodSheet, ...rep.prodNew.values()], [18, 34, 34, 30, 14, 12], [5]);
   put("Mã truy xuất", base && base.sheets["Mã truy xuất"].length ? base.sheets["Mã truy xuất"] : [["Loại phân thuốc", "Danh mục", "Mã truy xuất"], ...FB_CODES], [18, 36, 12], [2]);
@@ -2687,6 +2714,9 @@ function renderXuat() {
         const lines = [`• ${rep.newRows} dòng mới (cột ID để trống), từ ${fmt(rep.start)} đến ${fmt(rep.end)}.`];
         if (rep.skipFuture) lines.push(`• Bỏ ${rep.skipFuture} việc sau hôm nay: chưa làm thì chưa ghi vào nhật ký.`);
         if (rep.skipMon) lines.push(`• Bỏ ${rep.skipMon} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế. Nhập kết quả ở mục “Kết quả kiểm tra sâu bệnh thực tế của lô” rồi xuất lại.`);
+        if (rep.skipSeason) lines.push(`• Bỏ ${rep.skipSeason} việc ngoài mùa vụ của file FarmBase (${FB_BASE[r.id].C["Bắt đầu mùa vụ"]} – ${FB_BASE[r.id].C["Kết thúc mùa vụ"]}): FarmBase chỉ nhận ngày trong mùa vụ.`);
+        if (rep.noPhone.size) lines.push(`• ${rep.noPhone.size} chủ hộ chưa có số điện thoại (cột bắt buộc, FarmBase sẽ từ chối dòng đó): ${[...rep.noPhone].slice(0, 6).join(", ")}${rep.noPhone.size > 6 ? "…" : ""}. Bổ sung ở tab 1 hoặc tải file FarmBase để lấy số.`);
+        if (rep.cut.size) lines.push(`• Đã rút gọn cho vừa giới hạn ký tự của FarmBase ở cột: ${[...rep.cut].join(", ")}.`);
         if (rep.skipDup) lines.push(`• Bỏ ${rep.skipDup} dòng đã có trên FarmBase (trùng nông dân, ngày, công việc, phân thuốc).`);
         if (rep.lotMiss.size) lines.push(`• ${rep.lotMiss.size} lô không có trong danh sách lô của FarmBase (cột Lô đất để trống): ${[...rep.lotMiss].slice(0, 8).join(", ")}${rep.lotMiss.size > 8 ? "…" : ""}.`);
         if (rep.farmerMiss.size) lines.push(`• ${rep.farmerMiss.size} chủ hộ không khớp tên trên FarmBase: ${[...rep.farmerMiss].slice(0, 6).join(", ")}${rep.farmerMiss.size > 6 ? "…" : ""}. Sửa tên cho khớp trước khi nhập.`);
