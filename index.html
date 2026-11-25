@@ -2676,7 +2676,7 @@ function renderXuat() {
   const blkBox = h("div");
   const drawBlk = () => {
     blockers = calcBlk(); btnOff.disabled = blockers.length > 0; btnOff.title = blockers.length ? `Còn ${blockers.length} mục bắt buộc chưa đủ` : "";
-    btnZip.className = blockers.length ? "btn" : "btn sm"; btnZip.textContent = blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)";
+    btnZip.className = "btn"; btnZip.textContent = "Tải bản đối soát nội bộ – đủ sâu bệnh theo quy trình (.zip)"; btnZip.title = "Các lần kiểm tra chưa nhập được điền theo quy trình mẫu; file có chữ BẢN NHÁP, dùng để đối soát, không nộp";
     blkBox.replaceChildren(blockers.length ? h("div", { class: "msg err" }, h("b", {}, `Chưa tải được tệp chính thức – còn ${blockers.length} mục bắt buộc (màu đỏ):`), h("ul", { style: "margin:4px 0 0 18px;padding:0" }, blockers.slice(0, 15).map(t => h("li", { style: "margin:3px 0" }, t, fixBtn(t))), blockers.length > 15 ? h("li", {}, `… và ${blockers.length - 15} mục khác`) : null),
       h("div", { style: "margin-top:4px" }, "Bấm nút cạnh từng mục để đến chỗ sửa. Bổ sung đủ thì nút “Tải tệp chính thức” sẽ mở. Trong lúc đó vẫn tải được bản nháp để xem (có chữ BẢN NHÁP).")) : h("div", { class: "msg ok" }, "Đã đủ các mục bắt buộc – có thể tải tệp chính thức."), (() => { const w = X.withQ !== false && qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").find(x => /chưa đúng dạng mã/.test(x[1])); return w ? h("div", { class: "msg warn" }, w[1], fixBtn("Phiếu khảo sát (06): thiếu " + QF.find(f => f[0] === "maDG")[2])) : null; })());
   };  drawBlk();
@@ -2685,7 +2685,7 @@ function renderXuat() {
   async function doExport(which, official) {
     const withQ = which === 5 || (which == null && X.withQ !== false);
     if (official && blockers.length) { toast("Chưa tải được tệp chính thức: còn mục bắt buộc chưa đủ."); return; }
-    FORCE_DRAFT = blockers.length > 0; SKIP_PENDING = !FORCE_DRAFT;
+    FORCE_DRAFT = blockers.length > 0; SKIP_PENDING = !!official && !FORCE_DRAFT;
     const notes = [];
     if (official) notes.push("• Tệp chính thức: đã đủ các mục bắt buộc. Vẫn nên rà lại thông tin, nhất là cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát, trước khi ký và nộp.");
     if (isDraft && SKIP_PENDING && (which == null || which === 5)) notes.push(`• ${nMonLeft} lần kiểm tra chưa nhập kết quả sẽ không có trong hồ sơ (không tự điền sâu bệnh). Bật “Mặc định không phát hiện” nếu các lần đó đã kiểm tra và không thấy gì.`);
