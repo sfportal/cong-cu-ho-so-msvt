@@ -2661,7 +2661,7 @@ function renderXuat() {
   const fixBtn = t => {
     let lab = "Sửa", go = null, m;
     if ((m = /^Phiếu khảo sát \(06\): thiếu (.+)$/.exec(t))) { const f = QF.find(x => x[2] === m[1]); lab = "Điền ngay"; go = () => flash(document.querySelector(`[data-q="${f ? f[0] : ""}"]`)) || goH2("xuat", "06 Phiếu khảo sát"); }
-    else if (/chưa nhập kết quả/.test(t)) { if (r.monNo) go = () => goH2("xuat", "Kết quả kiểm tra sâu bệnh thực tế"); else { lab = "Kiểm tra định kỳ không phát hiện gì: bật “Mặc định không phát hiện” cho cả vùng"; go = () => { const ck = document.querySelector("#monNoLbl input"); if (ck) { ck.scrollIntoView({ block: "center" }); ck.click(); } }; } }
+    else if (/chưa nhập kết quả/.test(t)) { lab = "Xác nhận lấy dữ liệu sâu bệnh từ hệ thống cho cả vùng"; go = () => confirmProcess(); }
     else if (/sau hôm nay/.test(t)) { lab = "Đặt “Đến ngày” là hôm nay"; go = () => { X.to = Math.min(todayDn(), plan.sEnd); renderXuat(); }; }
     else if (/tên thương phẩm/.test(t)) { lab = "Sửa tên thuốc trong quy trình"; go = () => goH2("quytrinh", "Phân bón, thuốc BVTV"); }
     else if (/^(Vùng trồng|Nông hộ|Lô )/.test(t)) go = () => goH2("vung", /^Vùng trồng/.test(t) ? "Thông tin vùng trồng" : "Dữ liệu cần bổ sung");
@@ -2669,7 +2669,7 @@ function renderXuat() {
     else if (/chưa chọn thuốc/.test(t)) go = () => goH2("quytrinh", "Diễn biến sinh vật gây hại");
     else if (/quá gần ngày thu hoạch/.test(t)) go = () => goH2("xuat", "Ngày ra hoa, thu hoạch của từng lô");
     else if (/Phiếu khảo sát|Phụ lục/.test(t)) go = () => goH2("xuat", "06 Phiếu khảo sát");
-    return go ? h("button", { class: "btn sm" + (/Mặc định/.test(lab) ? " pri" : ""), style: "margin-left:8px", onclick: go }, lab + " →") : null;
+    return go ? h("button", { class: "btn sm" + (/Mặc định|Xác nhận/.test(lab) ? " pri" : ""), style: "margin-left:8px", onclick: go }, lab + " →") : null;
   };
   const btnZip = h("button", { class: blockers.length ? "btn" : "btn sm", onclick: () => doExport(null) }, blockers.length ? "Tải BẢN NHÁP trọn bộ (.zip)" : "Tải bản xem thử (.zip)");
   const btnOff = h("button", { class: "btn pri", onclick: () => { if (!blockers.length) doExport(null, true); } }, "Tải tệp chính thức (.zip)");
@@ -2968,6 +2968,28 @@ function renderXuat() {
       h("button", { class: "btn sm", onclick: () => quickFill(false) }, "Điền nhanh “không phát hiện” – lô này"),
       h("button", { class: "btn sm", onclick: () => quickFill(true) }, "Điền nhanh “không phát hiện” – tất cả các lô")), monNoBox(), waveBox(), obsBox));
   // record one real outbreak across many lots at once: pest, level, treatment, stage (each lot's own stage dates)
+  // one confirmation for the whole region: take the pest outbreaks the system generates from the process (fruit fly and mealybugs stay "not found"),
+  // record them on every lot at the right stage, and count every other check up to today as nothing found
+  async function confirmProcess() {
+    const today = todayDn(), quar = p => p.trap || /rệp sáp/i.test(p.vn);
+    const occs = cfg.occ.filter(o => { const p = PE.find(x => x.id === o.pest); return p && !quar(p) && plan.stages.some(s => s.id === o.stage); });
+    const jobs = occs.map(o => {
+      const picks = [];
+      for (const l of plan.lots) {
+        const st = (l.Ls || plan.stages).find(s => s.id === o.stage); if (!st) continue;
+        const m = plan.events.filter(e => e.kind === "mon" && !e.deleted && e.lot === l.k && e.d >= st.start && e.d <= st.end && e.d <= today).sort((a, b) => a.d - b.d)[0];
+        if (m) picks.push(m);
+      }
+      return { o, picks };
+    }).filter(j => j.picks.length);
+    const n = jobs.reduce((a, j) => a + j.picks.length, 0);
+    const names = [...new Set(jobs.map(j => PE.find(x => x.id === j.o.pest).vn.replace(/\s*\(.*\)$/, "")))].join(", ");
+    if (!await ask(`Xác nhận lấy dữ liệu sâu bệnh do hệ thống sinh ra theo quy trình cho vùng “${r.info.ten}”, vụ này:\n\n• ${jobs.length} đợt (${names || "không có đợt nào đến hôm nay"}) ghi cho ${plan.lots.length} lô, đúng giai đoạn của từng lô.\n• Ruồi đục quả và rệp sáp: không phát hiện.\n• Các lần kiểm tra còn lại đến hôm nay: không phát hiện.\n\nSau khi xác nhận, các nội dung này được ghi vào hồ sơ như kết quả kiểm tra của vùng và bạn chịu trách nhiệm về chúng. Sửa từng lần ở bảng bên dưới nếu cần.\n\nXác nhận?`)) return;
+    const o = ed();
+    for (const j of jobs) for (const m of j.picks) { const x = { ...(o[m.key] || {}) }; x.obs = { ...(x.obs || {}), [j.o.pest]: `${j.o.muc}|${j.o.xuLy === "hoa" ? "hoa" : "thucong"}` }; if (x.fly == null) x.fly = 0; o[m.key] = x; }
+    if (!r.monNo) { r.monNo = dmy(today); persist("regions", r.id); }
+    saveEd(); toast(`Đã ghi ${jobs.length} đợt sâu bệnh vào ${n} lần kiểm tra; các lần còn lại: không phát hiện.`); renderXuat();
+  }
   function waveBox() {
     const box = h("div", { style: "margin:8px 0;padding:10px 12px;border:1px solid var(--line, #dde3dc);border-radius:8px" });
     const pSel = h("select", {}, PE.map(p => h("option", { value: p.id }, p.vn)));
@@ -3091,7 +3113,7 @@ function realIssues(r, cfg, plan, edits) {
   if (n > 1 && own < n) out.push(["warn", `${n - own}/${n} lô chưa có ngày ra hoa hoặc thu hoạch riêng, đang theo lịch chung: các vườn sẽ có lịch gần giống nhau. Nhập ở mục “Ngày ra hoa, thu hoạch của từng lô”.`]);
   const pend = plan.active.filter(e => e.kind === "mon" && !e.entered && e.d >= X0(plan) && e.d <= Math.min(todayDn(), plan.sEnd));
   const pendLots = new Set(pend.map(e => e.lot));
-  if (pendLots.size) out.push(["warn", `${pendLots.size}/${n} lô còn ${pend.length} lần kiểm tra chưa nhập kết quả thực tế (sâu bệnh, số ruồi ở bẫy). Vẫn tải được tệp chính thức: các lần này không được ghi vào hồ sơ (không tự điền sâu bệnh mẫu), nên nhật ký sẽ thưa lần kiểm tra. Muốn đủ thì bật “Mặc định không phát hiện” hoặc ghi các đợt sâu bệnh ở mục “Kết quả kiểm tra sâu bệnh thực tế của lô”.`]);
+  if (pendLots.size) out.push(["warn", `${pendLots.size}/${n} lô còn ${pend.length} lần kiểm tra chưa nhập kết quả thực tế (sâu bệnh, số ruồi ở bẫy). Vẫn tải được tệp chính thức: các lần này không được ghi vào hồ sơ (không tự điền sâu bệnh mẫu), nên nhật ký sẽ thưa lần kiểm tra. Muốn hồ sơ có đủ sâu bệnh thì bấm nút Xác nhận bên cạnh.`]);
   const usedPest = new Map();
   for (const e of plan.active) for (const x of e.prods) if (isPesticide(x.p)) usedPest.set(x.p.id + "|" + x.p.ten, x.p);
   const generic = [...usedPest.values()].filter(p => /^thuốc chứa/i.test(p.ten)).map(p => p.ten);
