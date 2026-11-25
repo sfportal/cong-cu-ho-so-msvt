@@ -1047,8 +1047,6 @@ function buildPlan(r, cfg, year, span) {
   }
   // region setting: checks done up to today with nothing entered count as "nothing found, 0 flies" (the user confirmed this once for the region)
   if (r.monNo) { const t = todayDn(); for (const e of events) if (e.kind === "mon" && !e.entered && !e.deleted && e.d <= t) { e.obs = {}; e.flyEd = 0; e.entered = true; e.autoNo = true; } }
-  // other past checks with nothing entered take the result the process formula generates (template pests, 0 flies); shown as a warning, never blocks export
-  { const t = todayDn(); for (const e of events) if (e.kind === "mon" && !e.entered && !e.deleted && e.d <= t) { e.flyEd = 0; e.entered = true; e.autoPlan = true; } }
   const alive = events.filter(e => !e.deleted);
   // a detection is recorded at the periodic check on or after its date (one row, no repeats)
   const monsBy = {};
@@ -1059,7 +1057,7 @@ function buildPlan(r, cfg, year, span) {
     if (m) { o.into = m; m.occs.push(o); }
   }
   // field observations entered for a check replace the process template for those pests
-  for (const m of alive.filter(e => e.kind === "mon" && e.entered && !e.autoPlan)) {
+  for (const m of alive.filter(e => e.kind === "mon" && e.entered)) {
     const keys = Object.keys(m.obs || {}).filter(id => V[id] && !V[id].trap);
     m.occs = [];
     for (const id of keys) {
@@ -2233,7 +2231,7 @@ function exportProcessXlsx(cfg) {
     ["3. Giai đoạn xếp đúng thứ tự trong vụ, bắt đầu từ ngày bắt đầu vụ; đánh dấu x cho giai đoạn hoa nở."],
     [`4. Loại vật tư: ${LOAI.map(x => x[1]).join(", ")}. Loại việc: ${KIND.map(x => x[1]).join(", ")}.`],
     ["5. Thuốc BVTV cần có hoạt chất, nồng độ theo nhãn và thời gian cách ly; chỉ dùng thuốc trong Danh mục được phép và đăng ký trên cây trồng."],
-    ["6. Sheet Dien bien mau chỉ để lập kế hoạch; lần kiểm tra chưa nhập kết quả sẽ ghi theo diễn biến mẫu (công cụ chỉ cảnh báo); kết quả thực tế nhập trong công cụ cho từng lô."],
+    ["6. Sheet Dien bien mau chỉ để lập kế hoạch; kết quả kiểm tra thực tế vẫn nhập trong công cụ cho từng lô. Hồ sơ còn dữ liệu mẫu sẽ in chữ BẢN NHÁP."],
     ["7. Cột tiếng Trung để trống được, nhưng hồ sơ song ngữ cần đủ trước khi nộp."],
     ["8. Xong thì vào tab Quy trình > Nhập quy trình từ Excel; công cụ kiểm tra và báo lỗi trước khi áp dụng."]], [120]);
   add("Mua vu", [["Thông số", "Giá trị"], ...QT_MV.map(([l, g]) => [l, g(cfg) ?? ""])], [55, 30]);
@@ -2945,7 +2943,7 @@ function renderXuat() {
     const mons = plan.events.filter(e => e.lot === X.lot && e.kind === "mon" && !e.deleted && e.d >= X.from && e.d <= X.to);
     const tb = h("tbody", {}, mons.map(m => {
       const E = ed()[m.key] || {};
-      const cur = id => { if (E.obs && id in E.obs) return E.obs[id] || "0"; if (m.entered && !m.autoPlan) return "0"; const o = m.occs.find(o => o.pest.id === id); return o ? `${o.mucEd || o.occ.muc}|${o.occ.xuLy === "hoa" ? "hoa" : "thucong"}` : "0"; };
+      const cur = id => { if (E.obs && id in E.obs) return E.obs[id] || "0"; if (m.entered) return "0"; const o = m.occs.find(o => o.pest.id === id); return o ? `${o.mucEd || o.occ.muc}|${o.occ.xuLy === "hoa" ? "hoa" : "thucong"}` : "0"; };
       const upd = f => { const o = ed(); const x = { ...(o[m.key] || {}) }; f(x); if (Object.keys(x).length) o[m.key] = x; else delete o[m.key]; saveEd(); plan = mk(); drawObs(); };
       const cells = PE.map(p => { const s = h("select", { class: m.entered ? "" : "muted", style: "min-width:92px" + (m.entered ? "" : ";opacity:.55") }, OBS_OPTS.map(([v, t]) => h("option", { value: v }, t))); s.value = cur(p.id);
         s.addEventListener("change", () => upd(x => { x.obs = { ...(x.obs || {}), [p.id]: s.value }; })); return h("td", {}, s); });
@@ -2953,7 +2951,7 @@ function renderXuat() {
       fl.addEventListener("change", () => upd(x => { if (fl.value === "") delete x.fly; else x.fly = Math.max(0, Math.round(num(fl.value))); }));
       const ok = h("button", { class: "btn sm", title: "Đã kiểm tra ngoài vườn: không thấy sâu bệnh, bẫy 0 ruồi", onclick: () => upd(x => { x.obs = x.obs || {}; x.fly = x.fly ?? 0; }) }, "Không phát hiện");
       const rs = h("button", { class: "btn sm", title: "Xóa kết quả đã nhập của lần này", onclick: () => upd(x => { delete x.obs; delete x.fly; }) }, "↺");
-      return h("tr", {}, h("td", {}, fmt(m.d), h("div", { class: "muted" }, m.autoNo ? "mặc định: không phát hiện" : m.autoPlan ? "theo quy trình (chưa nhập)" : m.entered ? "đã nhập" : m.d > todayDn() ? "chưa đến ngày" : "mẫu – chưa nhập")), h("td", {}, m.stage.vn), ...cells, h("td", {}, fl), h("td", {}, m.entered ? null : ok, rs));
+      return h("tr", {}, h("td", {}, fmt(m.d), h("div", { class: "muted" }, m.autoNo ? "mặc định: không phát hiện" : m.entered ? "đã nhập" : m.d > todayDn() ? "chưa đến ngày" : "mẫu – chưa nhập")), h("td", {}, m.stage.vn), ...cells, h("td", {}, fl), h("td", {}, m.entered ? null : ok, rs));
     }));
     obsBox.replaceChildren(h("div", { class: "tw", style: "margin-top:8px;max-height:520px;overflow:auto" }, h("table", { class: "t" },
       h("thead", {}, h("tr", {}, h("th", {}, "Ngày kiểm tra"), h("th", {}, "Giai đoạn"), PE.map(p => h("th", { title: p.vn }, p.vn.replace(/\s*\(.*\)$/, ""))), h("th", {}, "Ruồi đục quả (bẫy)"), h("th", {}, ""))), tb)),
@@ -3040,8 +3038,8 @@ function renderXuat() {
   }
   async function quickFill(all) {
     const today = todayDn();
-    const mons = plan.events.filter(e => e.kind === "mon" && !e.deleted && (!e.entered || e.autoPlan) && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d <= today);
-    const fut = plan.events.filter(e => e.kind === "mon" && !e.deleted && (!e.entered || e.autoPlan) && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d > today).length;
+    const mons = plan.events.filter(e => e.kind === "mon" && !e.deleted && !e.entered && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d <= today);
+    const fut = plan.events.filter(e => e.kind === "mon" && !e.deleted && !e.entered && (all || e.lot === X.lot) && e.d >= X.from && e.d <= X.to && e.d > today).length;
     if (!mons.length) { toast(fut ? `Các lần kiểm tra còn lại đều sau hôm nay (${fut} lần), chưa điền được.` : "Không còn lần kiểm tra nào chưa nhập."); return; }
     const nLot = new Set(mons.map(e => e.lot)).size;
     if (!await ask(`Điền ${mons.length} lần kiểm tra chưa nhập (${nLot} lô, đến hôm nay) là: không phát hiện sâu bệnh, bẫy 0 ruồi đục quả.\n\nChỉ dùng khi các lần kiểm tra này đã thực hiện ngoài vườn và đúng là không phát hiện gì. Sau đó sửa riêng những lần có phát hiện (chọn mức gây hại, nhập số ruồi).${fut ? `\n\n${fut} lần kiểm tra sau hôm nay giữ nguyên, điền khi đã kiểm tra.` : ""}\n\nTiếp tục?`)) return;
@@ -3086,9 +3084,9 @@ function realIssues(r, cfg, plan, edits) {
   const out = [], n = plan.lots.length;
   const own = plan.lots.filter(l => l.own).length;
   if (n > 1 && own < n) out.push(["warn", `${n - own}/${n} lô chưa có ngày ra hoa hoặc thu hoạch riêng, đang theo lịch chung: các vườn sẽ có lịch gần giống nhau. Nhập ở mục “Ngày ra hoa, thu hoạch của từng lô”.`]);
-  const pend = plan.active.filter(e => e.kind === "mon" && e.autoPlan && e.d >= X0(plan) && e.d <= Math.min(todayDn(), plan.sEnd));
+  const pend = plan.active.filter(e => e.kind === "mon" && !e.entered && e.d >= X0(plan) && e.d <= Math.min(todayDn(), plan.sEnd));
   const pendLots = new Set(pend.map(e => e.lot));
-  if (pendLots.size) out.push(["warn", `${pendLots.size}/${n} lô có ${pend.length} lần kiểm tra chưa nhập kết quả thực tế; công cụ đang ghi sâu bệnh và số ruồi ở bẫy theo quy trình mẫu (đề xuất). Nên rà lại cho khớp thực tế ở mục “Kết quả kiểm tra sâu bệnh thực tế của lô”.`]);
+  if (pendLots.size) out.push(["err", `${pendLots.size}/${n} lô còn ${pend.length} lần kiểm tra chưa nhập kết quả thực tế (sâu bệnh, số ruồi ở bẫy). Hồ sơ xuất ra sẽ in chữ BẢN NHÁP: các dòng sâu bệnh lúc đó chỉ là kế hoạch theo quy trình mẫu, không dùng để nộp. Nhập ở mục “Kết quả kiểm tra sâu bệnh thực tế của lô”.`]);
   const usedPest = new Map();
   for (const e of plan.active) for (const x of e.prods) if (isPesticide(x.p)) usedPest.set(x.p.id + "|" + x.p.ten, x.p);
   const generic = [...usedPest.values()].filter(p => /^thuốc chứa/i.test(p.ten)).map(p => p.ten);

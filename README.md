@@ -30,4 +30,4 @@ Tab 3, thẻ "Xuất nhật ký canh tác sang FarmBase": chọn file NKCT xuấ
 
 - Dữ liệu và ảnh được lưu trên trình duyệt của máy đang dùng (IndexedDB), không gửi lên máy chủ. Máy khác hoặc trình duyệt khác sẽ không thấy.
 - Dùng mục Sao lưu JSON để chuyển dữ liệu sang máy khác (ảnh không nằm trong file sao lưu).
-- Lần kiểm tra chưa nhập kết quả được ghi theo diễn biến mẫu của quy trình (bẫy 0 ruồi) và chỉ hiện cảnh báo vàng, không chặn tải tệp chính thức. Kết quả thực tế nhập trong công cụ sẽ thay dữ liệu mẫu.
+- Kết quả bẫy và sâu bệnh chỉ lấy từ số liệu người dùng nhập; hồ sơ còn dùng dữ liệu mẫu sẽ in chữ BẢN NHÁP.
