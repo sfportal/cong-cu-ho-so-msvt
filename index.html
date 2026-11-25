@@ -1340,6 +1340,38 @@ function slimPlan(plan, from, to, max) {
   }
   return out;
 }
+// "Thu gọn": every logbook of the lot keeps only the farm-diary rows chosen here (30–40 per lot):
+// pest findings and their treatment, pesticide uses and harvest always; then one row per stage; then fertilizer uses,
+// periodic checks spread evenly over the season and other tasks, round-robin by stage, up to the target
+const NK_GON = { min: 30, max: 40, target: 35 };
+function compactPlan(plan, from, to) {
+  const out = { omit: new Set(), over: [], before: 0, after: 0, maxLot: 0, minLot: Infinity, on: true, gon: true };
+  const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd);
+  const T = NK_GON.target;
+  for (const l of plan.lots) {
+    const L = ev.filter(e => e.lot === l.k); out.before += L.length;
+    const core = e => (e.pests && e.pests.length > 0) || e.nk === "thu" || e.prods.some(x => isPesticide(x.p) || isGrowthReg(x.p));
+    const keep = new Set(L.filter(core));
+    const stages = [...new Set(L.map(e => e.stage.id))];
+    const rest = L.filter(e => !keep.has(e));
+    const fert = rest.filter(e => e.prods.length), mons = rest.filter(e => e.kind === "mon" && e.entered && !e.prods.length), tasks = rest.filter(e => e.kind === "task" && !e.prods.length);
+    // each stage at least once (prefer a fertilizer use, then a task, then a check)
+    for (const s of stages) if (![...keep].some(e => e.stage.id === s)) { const c = [...fert, ...tasks, ...mons].find(e => e.stage.id === s); if (c) keep.add(c); }
+    const add = (list, n) => { const cand = list.filter(e => !keep.has(e)); if (n <= 0 || !cand.length) return; if (cand.length <= n) { cand.forEach(e => keep.add(e)); return; } for (let i = 0; i < n; i++) keep.add(cand[Math.floor((i + 0.5) * cand.length / n)]); };
+    add(fert, T - keep.size);
+    add(mons, Math.min(Math.ceil((T - keep.size) * 0.6), mons.length));
+    add(tasks, T - keep.size);
+    add(mons, T - keep.size);
+    for (const e of L) if (!keep.has(e)) out.omit.add(e);
+    if (keep.size > NK_GON.max) out.over.push([l.ma, keep.size]);
+    out.after += keep.size; out.maxLot = Math.max(out.maxLot, keep.size); out.minLot = Math.min(out.minLot, keep.size);
+  }
+  if (out.minLot === Infinity) out.minLot = 0;
+  return out;
+}
+// the row selection used by every logbook of an export: full, compact (30–40 rows) or a custom cap
+const nkModeOf = r => r.nkMode || (Math.round(num(r.maxNk)) > 0 ? "so" : "full");
+function slimFor(r, plan, from, to) { const m = nkModeOf(r); return m === "gon" ? compactPlan(plan, from, to) : m === "so" ? slimPlan(plan, from, to, r.maxNk) : slimPlan(plan, from, to, 0); }
 let FORCE_DRAFT = false; // set while exporting when required (red) items are still missing
 function buildDocs(r, cfg, plan, from, to) {
   const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd);
@@ -1353,8 +1385,9 @@ function buildDocs(r, cfg, plan, from, to) {
     area: String(area).replace(".", ","), nHo, nLo: lots.length, crop, rep: r.info.daiDien || "…………………", std: r.info.tieuChuan,
     tinhShort: (r.info.tinh || "").replace(/^Tỉnh\s+|^Thành phố\s+/i, "") || "………",
   };
-  const byLot = k => ev.filter(e => e.lot === k);
-  const SL = slimPlan(plan, from, to, r.maxNk);
+  const SL = slimFor(r, plan, from, to);
+  const evK = SL.gon ? ev.filter(e => !SL.omit.has(e)) : ev; // compact: 02–05 follow exactly the rows kept in 01
+  const byLot = k => evK.filter(e => e.lot === k);
   const draftLots = new Set(ev.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).map(e => e.lot));
   ctx.draftLots = draftLots.size; ctx.draft = draftLots.size || (FORCE_DRAFT ? 1 : 0);
   lots.forEach(l => { l.draftMark = draftLots.has(l.k); });
@@ -1371,6 +1404,7 @@ function buildDocs(r, cfg, plan, from, to) {
       ["Tên phân bón / thuốc BVTV", "肥料/农药名称"], ["Hoạt chất", "有效成分"], ["Liều lượng", "用量"], ["Cách ly (ngày)", "安全间隔期(天)"], ["Người thực hiện", "执行人"], ["Ghi chú", "备注"]];
     const W = [0.8, 1.7, 1.9, 3.9, 2.6, 3.4, 2.1, 1.9, 1.9, 1.1, 1.8, 3.2];
     if (SL.on && SL.omit.size) ch.push(para("Nhật ký ghi các công việc chính của từng giai đoạn: mọi lần sử dụng phân bón, thuốc BVTV, phát hiện sinh vật gây hại và thu hoạch được ghi đầy đủ; các lần kiểm tra định kỳ ghi đầy đủ trong hồ sơ giám sát ISPM 6. / 本记录记载各生长阶段的主要作业：所有肥料、农药使用、有害生物发现及采收均完整记录；定期检查详见ISPM 6监测记录。", { s: 9, i: true, after: 4 }));
+    if (SL.gon) ch.push(para("Bản thu gọn: mỗi lô ghi khoảng 30–40 dòng gồm các công việc quan trọng, mọi lần phát hiện và xử lý sâu bệnh, sử dụng thuốc BVTV và thu hoạch; nhật ký sâu bệnh, phân thuốc, ISPM 6 và ra vào ghi đúng các dòng này. / 精简版：每个地块记录约30–40条主要作业，包括全部病虫害发现与处理、农药使用及采收；病虫害、肥药、ISPM 6及出入记录与本记录一致。", { s: 9.5, i: true, after: 6 }));
     lots.forEach((l, i) => {
       ch.push(...lotHeader(i + 1, l, true));
       const rows = byLot(l.k).filter(e => !SL.omit.has(e)).map((e, k) => [String(k + 1), fmt(e.d), bi(e.stage.vn, e.stage.cn), bi(e.vn, e.cn),
@@ -1411,7 +1445,7 @@ function buildDocs(r, cfg, plan, from, to) {
       ["Theo dõi việc xuất kho và sử dụng phân bón, thuốc bảo vệ thực vật; đảm bảo an toàn, thời gian cách ly và truy xuất nguồn gốc. Mỗi lần xuất kho ứng với một công việc trong nhật ký canh tác.", "记录肥料、农药的出库及使用情况，确保安全、遵守安全间隔期并便于追溯。每次出库均对应农事操作记录中的一项作业。"]),
       ...generalInfo(ctx), para("II. DANH MỤC PHÂN BÓN, THUỐC BVTV SỬ DỤNG / 使用的肥料及农药清单", { s: 12, b: true, c: GREEN, before: 8 })];
     const used = new Map(), pk = p => p.id + "|" + p.ten;
-    for (const e of ev) for (const x of e.prods) { const k = pk(x.p); if (!used.has(k)) used.set(k, { p: x.p, n: 0 }); used.get(k).n++; }
+    for (const e of evK) for (const x of e.prods) { const k = pk(x.p); if (!used.has(k)) used.set(k, { p: x.p, n: 0 }); used.get(k).n++; }
     const plist = [...used.values()].map(x => x.p).sort((a, b) => (isPesticide(b) - isPesticide(a)) || a.ten.localeCompare(b.ten));
     ch.push(plist.length ? tbl([["STT", "序号"], ["Tên thương mại", "商品名"], ["Hoạt chất", "有效成分"], ["Loại", "类别"], ["Liều lượng", "用量"], ["Cách ly (ngày)", "安全间隔期(天)"], ["Số lần sử dụng", "使用次数"]],
       plist.map((p, i) => [String(i + 1), p.ten, p.hoatChat, [prodType(p)[1], prodType(p)[2]], doseBi(catalogDose(p)), phiTxt(p), String(used.get(pk(p)).n)]), [1, 4.5, 5, 3.2, 5, 2.6, 2.6], 9, [0, 5, 6])
@@ -2477,7 +2511,7 @@ function buildFarmbase(r, cfg, plan, from, to, base, mode) {
     return { ten: b ? b.ten : (lot.chu || own.ten || ""), sdt: String((b && b.sdt) || lot.sdt || own.sdt || "").replace(/\D/g, "").replace(/^84/, "0"), lo: !base || byLot.get(norm(lot.ma)) ? lot.ma : "" };
   };
   const out = [];
-  const SL = slimPlan(plan, from, to, r.maxNk);
+  const SL = slimFor(r, plan, from, to);
   for (const e of plan.active) {
     if (e.d < start || e.d > to) continue;
     if (SL.omit.has(e)) continue;
@@ -2601,10 +2635,11 @@ function renderXuat() {
     h("p", { class: "muted", style: "margin:8px 0 0" }, `Quy trình áp dụng: ${cfg.xa}. Lịch chung của vụ (lô có ngày ra hoa, thu hoạch riêng sẽ theo lịch riêng):`),
     h("div", { class: "timeline" }, plan.stages.map(s => h("span", {}, h("b", {}, s.vn), " ", `${fmt(s.start)} – ${fmt(s.end)}`)))));
   const inR = plan.active.filter(e => e.d >= X.from && e.d <= X.to && e.d >= plan.sStart && e.d <= plan.sEnd);
+  const SLc = slimFor(r, plan, X.from, X.to), inK = SLc.gon ? inR.filter(e => !SLc.omit.has(e)) : inR;
   const cnt = {
-    ct: inR.length - slimPlan(plan, X.from, X.to, r.maxNk).omit.size, sb: inR.reduce((a, e) => a + e.pests.length, 0),
-    pt: inR.reduce((a, e) => a + e.prods.length, 0), bay: inR.filter(e => e.kind === "mon").length * cfg.traps.length, dt: inR.filter(e => e.survey).length,
-    rv: new Set(inR.map(e => e.lot + e.d + e.person)).size,
+    ct: inR.length - SLc.omit.size, sb: inK.reduce((a, e) => a + e.pests.length, 0),
+    pt: inK.reduce((a, e) => a + e.prods.length, 0), bay: inK.filter(e => e.kind === "mon").length * cfg.traps.length, dt: inK.filter(e => e.survey).length,
+    rv: new Set(inK.map(e => e.lot + e.d + e.person)).size,
   };
   const pk = `${r.id}__${YR()}`;
   const ed = () => (S.edits[pk] = S.edits[pk] || {});
@@ -2673,13 +2708,20 @@ function renderXuat() {
   el.append(h("div", { class: "card" }, h("h2", {}, "Bộ hồ sơ sẽ xuất"),
     h("div", { class: "stat" }, h("div", {}, h("b", {}, cnt.ct), "dòng nhật ký canh tác"), h("div", {}, h("b", {}, cnt.sb), "lần ghi sâu bệnh"), h("div", {}, h("b", {}, cnt.pt), "lượt dùng phân thuốc"),
       h("div", {}, h("b", {}, cnt.bay), "lượt kiểm tra bẫy"), h("div", {}, h("b", {}, cnt.dt), "đợt điều tra 5 điểm"), h("div", {}, h("b", {}, cnt.rv), "lượt ra vào")),
-    (() => { const SLx = slimPlan(plan, X.from, X.to, r.maxNk), nSt = plan.stages.length;
-      const inp = h("input", { type: "number", min: 1, step: 1, value: r.maxNk || "", placeholder: "ghi đủ", style: "width:110px" });
+    (() => { const mode = nkModeOf(r), SLx = SLc, nSt = plan.stages.length;
+      const sel = h("select", {}, [["full", "Đầy đủ – ghi mọi công việc"], ["gon", "Thu gọn – 30–40 dòng mỗi lô, cả bộ hồ sơ khớp theo"], ["so", "Tùy chỉnh số dòng nhật ký canh tác"]].map(([v, t]) => h("option", { value: v }, t)));
+      sel.value = mode; sel.addEventListener("change", () => { r.nkMode = sel.value; persist("regions", r.id); renderXuat(); });
+      const inp = h("input", { type: "number", min: 1, step: 1, value: r.maxNk || "", placeholder: "VD 40", style: "width:110px" });
       inp.addEventListener("change", () => { const v = Math.round(num(inp.value)); r.maxNk = v > 0 ? v : ""; persist("regions", r.id); renderXuat(); });
-      return h("div", { style: "margin-top:10px;padding:10px 12px;border:1px solid var(--line, #dde3dc);border-radius:8px" }, h("div", { class: "row" }, h("label", { class: "f" }, "Số dòng nhật ký canh tác tối đa mỗi lô (để trống = ghi đủ)", inp)),
-        h("p", { class: "muted", style: "margin:6px 0 0" }, `Khi đặt giới hạn, nhật ký canh tác chỉ ghi các công việc chính: luôn giữ mọi lần dùng phân bón, thuốc BVTV, phát hiện sâu bệnh và thu hoạch; mỗi giai đoạn có ít nhất một dòng (vụ này có ${nSt} giai đoạn); phần còn lại chia đều cho các giai đoạn. Ngày và nội dung không đổi, chỉ bớt các việc chăm sóc thường ngày. Hồ sơ ISPM 6 vẫn ghi đủ các lần kiểm tra định kỳ; nhật ký sâu bệnh, phân thuốc không đổi.`),
-        SLx.on ? h("div", { class: "msg " + (SLx.over.length ? "warn" : "ok") }, `Nhật ký canh tác: ${SLx.after} dòng (bớt ${SLx.omit.size} trên ${SLx.before}), lô nhiều nhất ${SLx.maxLot} dòng.` + (SLx.over.length ? ` ${SLx.over.length} lô vẫn vượt ${r.maxNk} dòng vì số lần dùng phân thuốc, sâu bệnh, thu hoạch bắt buộc phải ghi (VD ${SLx.over.slice(0, 3).map(x => `${x[0]}: ${x[1]}`).join(", ")}). Muốn ít hơn thì phải giảm số lần bón, phun trong quy trình.` : "")) : null,
-        r.maxNk && r.maxNk < nSt ? h("div", { class: "msg warn" }, `Giới hạn ${r.maxNk} dòng nhỏ hơn số giai đoạn (${nSt}); mỗi giai đoạn vẫn được giữ một dòng.`) : null); })(),
+      const lpl = SLx.after && plan.lots.length ? Math.round(SLx.after / plan.lots.length) : 0;
+      return h("div", { style: "margin-top:10px;padding:10px 12px;border:1px solid var(--line, #dde3dc);border-radius:8px" },
+        h("div", { class: "row" }, h("label", { class: "f" }, "Kiểu hồ sơ", sel), mode === "so" ? h("label", { class: "f" }, "Số dòng tối đa mỗi lô", inp) : null),
+        mode === "gon" ? h("p", { class: "muted", style: "margin:6px 0 0" }, `Thu gọn lấy nhật ký canh tác làm chuẩn: mỗi lô khoảng ${NK_GON.min}–${NK_GON.max} dòng. Luôn giữ mọi lần phát hiện, xử lý sâu bệnh, dùng thuốc BVTV và thu hoạch; mỗi giai đoạn ít nhất một dòng; phần còn lại là bón phân, các lần kiểm tra định kỳ rải đều trong vụ và công việc chăm sóc chính. Nhật ký sâu bệnh, phân thuốc, ISPM 6 và ra vào chỉ ghi đúng các dòng đó, nên cả bộ khớp nhau.`)
+          : mode === "so" ? h("p", { class: "muted", style: "margin:6px 0 0" }, `Chỉ bớt dòng ở nhật ký canh tác: luôn giữ mọi lần dùng phân bón, thuốc BVTV, phát hiện sâu bệnh và thu hoạch; mỗi giai đoạn có ít nhất một dòng (vụ này có ${nSt} giai đoạn). Các nhật ký khác ghi đủ.`)
+          : h("p", { class: "muted", style: "margin:6px 0 0" }, "Ghi mọi công việc, mọi lần kiểm tra định kỳ trong khoảng ngày đã chọn."),
+        SLx.on && SLx.before ? h("div", { class: "msg " + (SLx.over.length ? "warn" : "ok") }, `Nhật ký canh tác: ${SLx.after} dòng (bớt ${SLx.omit.size} trên ${SLx.before}), trung bình ${lpl} dòng/lô, lô nhiều nhất ${SLx.maxLot} dòng.` + (SLx.over.length ? ` ${SLx.over.length} lô vượt ${SLx.gon ? NK_GON.max : r.maxNk} dòng vì số lần phát hiện sâu bệnh, dùng thuốc, thu hoạch bắt buộc phải ghi (VD ${SLx.over.slice(0, 3).map(x => `${x[0]}: ${x[1]}`).join(", ")}).` : "") + (SLx.gon && SLx.minLot < NK_GON.min && SLx.before > NK_GON.min * plan.lots.length ? "" : "")) : null,
+        SLx.gon && X.to - X.from < 200 ? h("div", { class: "msg warn" }, "Khoảng ngày đang chọn ngắn hơn một vụ, nên mỗi lô sẽ ít dòng hơn 30. Thu gọn 30–40 dòng tính cho cả vụ.") : null,
+        mode === "so" && r.maxNk && r.maxNk < nSt ? h("div", { class: "msg warn" }, `Giới hạn ${r.maxNk} dòng nhỏ hơn số giai đoạn (${nSt}); mỗi giai đoạn vẫn được giữ một dòng.`) : null); })(),
     h("h3", {}, "Kiểm tra trước khi xuất"),
     issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m, fixBtn(m))) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
     nErr ? h("p", { class: "muted" }, `Còn ${nErr} lỗi đỏ: vẫn xuất được để xem thử, nhưng nên sửa trước khi nộp.`) : null,
