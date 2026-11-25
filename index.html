@@ -1344,7 +1344,7 @@ function slimPlan(plan, from, to, max) {
 const NK_GON = { min: 30, max: 40, target: 35 };
 function compactPlan(plan, from, to) {
   const out = { omit: new Set(), over: [], before: 0, after: 0, maxLot: 0, minLot: Infinity, on: true, gon: true };
-  const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd);
+  const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd && !pendSkip(e));
   for (const l of plan.lots) {
     // each lot gets its own target between 30 and 40 (fixed per lot, so re-exports give the same rows)
     const T = NK_GON.min + [...String(l.ma || l.k) + (l.chu || "")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % (NK_GON.max - NK_GON.min + 1);
@@ -1372,8 +1372,11 @@ function compactPlan(plan, from, to) {
 const nkModeOf = r => r.nkMode || (Math.round(num(r.maxNk)) > 0 ? "so" : "full");
 function slimFor(r, plan, from, to) { const m = nkModeOf(r); return m === "gon" ? compactPlan(plan, from, to) : m === "so" ? slimPlan(plan, from, to, r.maxNk) : slimPlan(plan, from, to, 0); }
 let FORCE_DRAFT = false; // set while exporting when required (red) items are still missing
+// official files: past periodic checks with no result entered are left out (no template pests are written as results); drafts still show the plan
+let SKIP_PENDING = false;
+const pendSkip = e => SKIP_PENDING && ((e.kind === "mon" && !e.entered && e.d <= todayDn()) || (e.kind === "pest" && !e.into));
 function buildDocs(r, cfg, plan, from, to) {
-  const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd);
+  const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd && !pendSkip(e));
   const lots = plan.lots;
   const area = Math.round(lots.reduce((a, l) => a + num(l.dienTich), 0) * 100) / 100;
   const nHo = new Set(lots.map(l => hoKey(l.chu))).size;
@@ -1798,7 +1801,7 @@ function qGet(r, A, k, l2 = "cn") {
 }
 // monitoring and pesticide tables from the logs
 function qTables(r, cfg, plan, from, to) {
-  const ev = plan.active.filter(e => e.d >= from && e.d <= to);
+  const ev = plan.active.filter(e => e.d >= from && e.d <= to && !pendSkip(e));
   const mons = ev.filter(e => e.kind === "mon" && e.entered), allMons = ev.filter(e => e.kind === "mon");
   const nLot = plan.lots.length;
   const rows = [];
@@ -2650,7 +2653,7 @@ function renderXuat() {
   // official files only when every required (red) item is complete
   const qErrsNow = () => X.withQ !== false ? qIssues(r, qAuto(r, cfg, plan, X.from, X.to), r.qLang === "en" ? "en" : "cn").filter(x => x[0] === "err").map(x => `Phiếu khảo sát (06): thiếu ${x[1]}`) : [];
   const nMonLeft = inR.filter(e => e.kind === "mon" && !e.entered && e.d <= todayDn()).length;
-  const calcBlk = () => [...issues.filter(x => x[0] === "err").map(x => x[1]), ...(isDraft && !issues.some(x => x[0] === "err" && /chưa nhập kết quả/.test(x[1])) ? [`Còn ${nMonLeft} lần kiểm tra sâu bệnh, bẫy chưa nhập kết quả thực tế (mục “Kết quả kiểm tra sâu bệnh thực tế của lô”).`] : []), ...qErrsNow(), ...(nFuture ? [`Khoảng ngày đang chọn kéo đến ${fmt(X.to)}, có ${nFuture} việc sau hôm nay. Hồ sơ chính thức chỉ ghi việc đã làm: chọn “Đến ngày” là hôm nay hoặc sớm hơn (nút “Đầu vụ → hôm nay”).`] : [])];
+  const calcBlk = () => [...issues.filter(x => x[0] === "err").map(x => x[1]), ...qErrsNow(), ...(nFuture ? [`Khoảng ngày đang chọn kéo đến ${fmt(X.to)}, có ${nFuture} việc sau hôm nay. Hồ sơ chính thức chỉ ghi việc đã làm: chọn “Đến ngày” là hôm nay hoặc sớm hơn (nút “Đầu vụ → hôm nay”).`] : [])];
   let blockers = calcBlk();
   // jump to the place where a red item is fixed
   const flash = n => { if (!n) return false; n.scrollIntoView({ behavior: "smooth", block: "center" }); const c = n.closest(".card") || n; c.style.outline = "3px solid #f0b400"; setTimeout(() => c.style.outline = "", 2500); const f = n.matches("input,textarea,select") ? n : n.querySelector("input,textarea,select"); if (f) setTimeout(() => f.focus({ preventScroll: true }), 400); return true; };
@@ -2682,10 +2685,11 @@ function renderXuat() {
   async function doExport(which, official) {
     const withQ = which === 5 || (which == null && X.withQ !== false);
     if (official && blockers.length) { toast("Chưa tải được tệp chính thức: còn mục bắt buộc chưa đủ."); return; }
-    FORCE_DRAFT = blockers.length > 0;
+    FORCE_DRAFT = blockers.length > 0; SKIP_PENDING = !FORCE_DRAFT;
     const notes = [];
     if (official) notes.push("• Tệp chính thức: đã đủ các mục bắt buộc. Vẫn nên rà lại thông tin, nhất là cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát, trước khi ký và nộp.");
-    if (isDraft && (which == null || which === 5)) notes.push("• Đây là BẢN NHÁP: xem lại các nội dung bôi đỏ trong hồ sơ (lô còn lần kiểm tra chưa nhập kết quả, các mục cần bổ sung) trước khi dùng.");
+    if (isDraft && SKIP_PENDING && (which == null || which === 5)) notes.push(`• ${nMonLeft} lần kiểm tra chưa nhập kết quả sẽ không có trong hồ sơ (không tự điền sâu bệnh). Bật “Mặc định không phát hiện” nếu các lần đó đã kiểm tra và không thấy gì.`);
+    if (isDraft && !SKIP_PENDING && (which == null || which === 5)) notes.push("• Đây là BẢN NHÁP: xem lại các nội dung bôi đỏ trong hồ sơ (lô còn lần kiểm tra chưa nhập kết quả, các mục cần bổ sung) trước khi dùng.");
     if (withQ) notes.push(`• Phiếu khảo sát dùng các nội dung đã lưu${r.qExport ? ` từ lần xuất gần nhất (${r.qExport})` : ""}. Kiểm tra và sửa nếu cần, nhất là cơ sở đóng gói, mã cơ sở đóng gói và khoảng cách (bôi đỏ trong phiếu).`);
     if (notes.length && !await ask(notes.join("\n\n") + "\n\nTiếp tục tải?")) return;
     btnZip.disabled = true; const old = btnZip.textContent; btnZip.textContent = "Đang tạo file…";
@@ -2702,7 +2706,7 @@ function renderXuat() {
         await saveFile(`Ho_so_MSVT_${tag}.zip`, await zip.generateAsync({ type: "blob" }));
       }
     } catch (e) { console.error(e); toast("Lỗi tạo file: " + e.message); }
-    btnZip.disabled = false; btnZip.textContent = old;
+    btnZip.disabled = false; btnZip.textContent = old; SKIP_PENDING = false;
   }
   el.append(h("div", { class: "card" }, h("h2", {}, "Bộ hồ sơ sẽ xuất"),
     h("div", { class: "stat" }, h("div", {}, h("b", {}, cnt.ct), "dòng nhật ký canh tác"), h("div", {}, h("b", {}, cnt.sb), "lần ghi sâu bệnh"), h("div", {}, h("b", {}, cnt.pt), "lượt dùng phân thuốc"),
@@ -2724,7 +2728,7 @@ function renderXuat() {
     h("h3", {}, "Kiểm tra trước khi xuất"),
     issues.length ? issues.map(([t, m]) => h("div", { class: "msg " + t }, m, fixBtn(m))) : h("div", { class: "msg ok" }, "Không có lỗi. Năm nhật ký lấy cùng dữ liệu nên khớp ngày, lô, người và vật tư."),
     nErr ? h("p", { class: "muted" }, `Còn ${nErr} lỗi đỏ: vẫn xuất được để xem thử, nhưng nên sửa trước khi nộp.`) : null,
-    isDraft ? h("div", { class: "msg err" }, "Bộ hồ sơ đang là BẢN NHÁP. Sau khi tải, xem lại các nội dung bôi đỏ trong file (lô chưa nhập đủ kết quả kiểm tra, cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát) và sửa trước khi nộp.") : null,
+    isDraft && blockers.length ? h("div", { class: "msg err" }, "Bộ hồ sơ đang là BẢN NHÁP. Sau khi tải, xem lại các nội dung bôi đỏ trong file (lô chưa nhập đủ kết quả kiểm tra, cơ sở đóng gói, mã và khoảng cách trong phiếu khảo sát) và sửa trước khi nộp.") : null,
     blkBox,
     h("div", { class: "row", style: "margin-top:10px" }, btnOff, btnZip, one(0, "01 Canh tác"), one(1, "02 Sâu bệnh"), one(2, "03 Phân thuốc"), one(3, "04 ISPM 6"), one(4, "05 Ra vào"), one(5, "06 Phiếu khảo sát"))));
 
@@ -3087,7 +3091,7 @@ function realIssues(r, cfg, plan, edits) {
   if (n > 1 && own < n) out.push(["warn", `${n - own}/${n} lô chưa có ngày ra hoa hoặc thu hoạch riêng, đang theo lịch chung: các vườn sẽ có lịch gần giống nhau. Nhập ở mục “Ngày ra hoa, thu hoạch của từng lô”.`]);
   const pend = plan.active.filter(e => e.kind === "mon" && !e.entered && e.d >= X0(plan) && e.d <= Math.min(todayDn(), plan.sEnd));
   const pendLots = new Set(pend.map(e => e.lot));
-  if (pendLots.size) out.push(["err", `${pendLots.size}/${n} lô còn ${pend.length} lần kiểm tra chưa nhập kết quả thực tế (sâu bệnh, số ruồi ở bẫy). Hồ sơ xuất ra sẽ in chữ BẢN NHÁP: các dòng sâu bệnh lúc đó chỉ là kế hoạch theo quy trình mẫu, không dùng để nộp. Nhập ở mục “Kết quả kiểm tra sâu bệnh thực tế của lô”.`]);
+  if (pendLots.size) out.push(["warn", `${pendLots.size}/${n} lô còn ${pend.length} lần kiểm tra chưa nhập kết quả thực tế (sâu bệnh, số ruồi ở bẫy). Vẫn tải được tệp chính thức: các lần này không được ghi vào hồ sơ (không tự điền sâu bệnh mẫu), nên nhật ký sẽ thưa lần kiểm tra. Muốn đủ thì bật “Mặc định không phát hiện” hoặc ghi các đợt sâu bệnh ở mục “Kết quả kiểm tra sâu bệnh thực tế của lô”.`]);
   const usedPest = new Map();
   for (const e of plan.active) for (const x of e.prods) if (isPesticide(x.p)) usedPest.set(x.p.id + "|" + x.p.ten, x.p);
   const generic = [...usedPest.values()].filter(p => /^thuốc chứa/i.test(p.ten)).map(p => p.ten);
