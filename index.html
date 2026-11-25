@@ -1345,8 +1345,9 @@ const NK_GON = { min: 30, max: 40, target: 35 };
 function compactPlan(plan, from, to) {
   const out = { omit: new Set(), over: [], before: 0, after: 0, maxLot: 0, minLot: Infinity, on: true, gon: true };
   const ev = plan.active.filter(e => e.d >= from && e.d <= to && e.d >= plan.sStart && e.d <= plan.sEnd);
-  const T = NK_GON.target;
   for (const l of plan.lots) {
+    // each lot gets its own target between 30 and 40 (fixed per lot, so re-exports give the same rows)
+    const T = NK_GON.min + [...String(l.ma || l.k) + (l.chu || "")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % (NK_GON.max - NK_GON.min + 1);
     const L = ev.filter(e => e.lot === l.k); out.before += L.length;
     const core = e => (e.pests && e.pests.length > 0) || e.nk === "thu" || e.prods.some(x => isPesticide(x.p) || isGrowthReg(x.p));
     const keep = new Set(L.filter(core));
@@ -2717,7 +2718,7 @@ function renderXuat() {
         mode === "gon" ? h("p", { class: "muted", style: "margin:6px 0 0" }, `Thu gọn lấy nhật ký canh tác làm chuẩn: mỗi lô khoảng ${NK_GON.min}–${NK_GON.max} dòng. Luôn giữ mọi lần phát hiện, xử lý sâu bệnh, dùng thuốc BVTV và thu hoạch; mỗi giai đoạn ít nhất một dòng; phần còn lại là bón phân, các lần kiểm tra định kỳ rải đều trong vụ và công việc chăm sóc chính. Nhật ký sâu bệnh, phân thuốc, ISPM 6 và ra vào chỉ ghi đúng các dòng đó, nên cả bộ khớp nhau.`)
           : mode === "so" ? h("p", { class: "muted", style: "margin:6px 0 0" }, `Chỉ bớt dòng ở nhật ký canh tác: luôn giữ mọi lần dùng phân bón, thuốc BVTV, phát hiện sâu bệnh và thu hoạch; mỗi giai đoạn có ít nhất một dòng (vụ này có ${nSt} giai đoạn). Các nhật ký khác ghi đủ.`)
           : h("p", { class: "muted", style: "margin:6px 0 0" }, "Ghi mọi công việc, mọi lần kiểm tra định kỳ trong khoảng ngày đã chọn."),
-        SLx.on && SLx.before ? h("div", { class: "msg " + (SLx.over.length ? "warn" : "ok") }, `Nhật ký canh tác: ${SLx.after} dòng (bớt ${SLx.omit.size} trên ${SLx.before}), trung bình ${lpl} dòng/lô, lô nhiều nhất ${SLx.maxLot} dòng.` + (SLx.over.length ? ` ${SLx.over.length} lô vượt ${SLx.gon ? NK_GON.max : r.maxNk} dòng vì số lần phát hiện sâu bệnh, dùng thuốc, thu hoạch bắt buộc phải ghi (VD ${SLx.over.slice(0, 3).map(x => `${x[0]}: ${x[1]}`).join(", ")}).` : "") + (SLx.gon && SLx.minLot < NK_GON.min && SLx.before > NK_GON.min * plan.lots.length ? "" : "")) : null,
+        SLx.on && SLx.before ? h("div", { class: "msg " + (SLx.over.length ? "warn" : "ok") }, `Nhật ký canh tác: ${SLx.after} dòng (bớt ${SLx.omit.size} trên ${SLx.before}), trung bình ${lpl} dòng/lô, ${SLx.gon ? `từ ${SLx.minLot} đến ${SLx.maxLot} dòng mỗi lô.` : `lô nhiều nhất ${SLx.maxLot} dòng.`}` + (SLx.over.length ? ` ${SLx.over.length} lô vượt ${SLx.gon ? NK_GON.max : r.maxNk} dòng vì số lần phát hiện sâu bệnh, dùng thuốc, thu hoạch bắt buộc phải ghi (VD ${SLx.over.slice(0, 3).map(x => `${x[0]}: ${x[1]}`).join(", ")}).` : "") + (SLx.gon && SLx.minLot < NK_GON.min && SLx.before > NK_GON.min * plan.lots.length ? "" : "")) : null,
         SLx.gon && X.to - X.from < 200 ? h("div", { class: "msg warn" }, "Khoảng ngày đang chọn ngắn hơn một vụ, nên mỗi lô sẽ ít dòng hơn 30. Thu gọn 30–40 dòng tính cho cả vụ.") : null,
         mode === "so" && r.maxNk && r.maxNk < nSt ? h("div", { class: "msg warn" }, `Giới hạn ${r.maxNk} dòng nhỏ hơn số giai đoạn (${nSt}); mỗi giai đoạn vẫn được giữ một dòng.`) : null); })(),
     h("h3", {}, "Kiểm tra trước khi xuất"),
